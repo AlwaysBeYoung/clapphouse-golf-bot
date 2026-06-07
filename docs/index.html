@@ -88,6 +88,11 @@
       margin-bottom: 1rem;
     }
 
+    /* ── Collapsible Legal Disclaimer ────────────────────────────────── */
+
+    details summary::-webkit-details-marker { display: none; }
+    details[open] .disclosure-arrow { transform: rotate(180deg); }
+
     /* ── Cards ───────────────────────────────────────────────────────── */
 
     .card {
@@ -349,12 +354,13 @@
       <p class="subtitle">Reserva Automática Inteligente</p>
     </header>
 
-    <!-- ═════════════════════ LEGAL DISCLAIMER ═════════════════════ -->
-    <div class="card" style="border-color: rgba(201,168,76,0.4); background: rgba(201,168,76,0.06);">
-      <div class="card-title" style="color: #c9a84c; font-size: 1.1rem;">
+    <!-- ═════════════════════ LEGAL DISCLAIMER (COLLAPSIBLE) ═════════════════════ -->
+    <details class="card" style="border-color: rgba(201,168,76,0.4); background: rgba(201,168,76,0.06); cursor: pointer;">
+      <summary style="list-style: none; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem; font-weight: 700; color: #c9a84c; padding: 0; user-select: none;">
         <span class="icon">⚖️</span> Aviso Legal Importante
-      </div>
-      <p style="font-size: 0.95rem; color: #b0a870; line-height: 1.6; margin: 0;">
+        <span style="margin-left: auto; font-size: 0.9rem; opacity: 0.7; transition: transform 0.2s;" class="disclosure-arrow">▼</span>
+      </summary>
+      <p style="font-size: 0.95rem; color: #b0a870; line-height: 1.6; margin: 0.8rem 0 0 0;">
         Esta herramienta se proporciona exclusivamente con fines de
         <strong style="color:#c9a84c;">aprendizaje e investigación técnica</strong>.
         El usuario asume toda la responsabilidad legal derivada de su uso.
@@ -365,7 +371,7 @@
         responsabilidad</strong> y se compromete a cumplir con todas las leyes
         y regulaciones vigentes.
       </p>
-    </div>
+    </details>
 
     <!-- ═════════════════════ CREDENTIALS CARD ═════════════════════ -->
     <div class="card" id="credentials-card">
