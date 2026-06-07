@@ -607,6 +607,89 @@ async function solveCaptcha(page, captchaType) {
   }
 }
 
+// ─── Playwright Semantic Locator Helpers ──────────────────────────────────────
+// These use Playwright's built-in getByRole/getByLabel/getByText/getByPlaceholder
+// which work like a HUMAN reading the page — no CSS selectors needed.
+// They're resilient to DOM changes because they match by visible text/labels.
+
+/**
+ * Try to locate an element using multiple strategies, in order.
+ * Each strategy is tried; the first visible match wins.
+ *
+ * @param {import('playwright').Page} page
+ * @param {Array<{desc: string, fn: () => import('playwright').Locator}>} strategies
+ * @param {number} timeout - max ms to wait
+ * @returns {Promise<{locator: import('playwright').Locator, method: string}>}
+ */
+async function smartLocate(page, strategies, timeout = 5000) {
+  for (const { desc, fn } of strategies) {
+    try {
+      const loc = fn();
+      await loc.first().waitFor({ state: 'visible', timeout });
+      return { locator: loc.first(), method: desc };
+    } catch (_) {
+      // This strategy didn't match — try the next one
+    }
+  }
+  const allDescs = strategies.map(s => s.desc).join(', ');
+  throw new Error(`[smartLocate] Ninguna estrategia funcionó: ${allDescs}`);
+}
+
+/**
+ * Try to select an option in a <select> element using multiple strategies.
+ */
+async function smartSelect(page, strategies, value, timeout = 5000) {
+  for (const { desc, fn } of strategies) {
+    try {
+      const loc = fn();
+      await loc.first().waitFor({ state: 'visible', timeout });
+      await loc.first().selectOption(value);
+      return { method: desc };
+    } catch (_) {
+      // Try next
+    }
+  }
+  const allDescs = strategies.map(s => s.desc).join(', ');
+  throw new Error(`[smartSelect] Ninguna estrategia funcionó: ${allDescs}`);
+}
+
+/**
+ * Try to fill an input field using multiple strategies.
+ */
+async function smartFill(page, strategies, value, timeout = 5000) {
+  for (const { desc, fn } of strategies) {
+    try {
+      const loc = fn();
+      await loc.first().waitFor({ state: 'visible', timeout });
+      await loc.first().click();
+      await loc.first().fill(value);
+      return { method: desc };
+    } catch (_) {
+      // Try next
+    }
+  }
+  const allDescs = strategies.map(s => s.desc).join(', ');
+  throw new Error(`[smartFill] Ninguna estrategia funcionó: ${allDescs}`);
+}
+
+/**
+ * Try to check a checkbox using multiple strategies.
+ */
+async function smartCheck(page, strategies, timeout = 5000) {
+  for (const { desc, fn } of strategies) {
+    try {
+      const loc = fn();
+      await loc.first().waitFor({ state: 'visible', timeout });
+      await loc.first().check({ force: true });
+      return { method: desc };
+    } catch (_) {
+      // Try next
+    }
+  }
+  const allDescs = strategies.map(s => s.desc).join(', ');
+  throw new Error(`[smartCheck] Ninguna estrategia funcionó: ${allDescs}`);
+}
+
 // ─── Playwright Automation Engine ───────────────────────────────────────────
 
 /**
@@ -671,22 +754,38 @@ async function executeSingleBooking(booking, targetDay) {
       await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
     }
 
-    // Type username with human-like keystroke delays
-    await page.waitForSelector(S.usernameField, { timeout: 10000 });
-    await page.click(S.usernameField);
-    await randomDelay(80, 150);
-    await page.fill(S.usernameField, booking.username);
+    // ── Fill username (semantic locators first, CSS fallback last) ──
+    const userMethod = await smartFill(page, [
+      { desc: 'label:Usuario',        fn: () => page.getByLabel('Usuario') },
+      { desc: 'placeholder:Usuario',  fn: () => page.getByPlaceholder('Usuario') },
+      { desc: 'role:textbox Usuario', fn: () => page.getByRole('textbox', { name: /usuario|email|correo/i }) },
+      { desc: 'css:#txtUsuarioLogin', fn: () => page.locator('#txtUsuarioLogin') },
+      { desc: 'css:input[type=email]',fn: () => page.locator('input[type="email"]') },
+      { desc: 'css:input[name*=user]',fn: () => page.locator('input[name*="user" i], input[name*="usuario" i], input[name*="login" i]') },
+    ], booking.username, 10000);
+    console.log(`   ↳ Username filled via: ${userMethod.method}`);
     await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
 
-    // Type password
-    await page.waitForSelector(S.passwordField, { timeout: 5000 });
-    await page.click(S.passwordField);
-    await randomDelay(80, 150);
-    await page.fill(S.passwordField, booking.password);
+    // ── Fill password ──
+    const pwdMethod = await smartFill(page, [
+      { desc: 'label:Contraseña',       fn: () => page.getByLabel('Contraseña') },
+      { desc: 'placeholder:Contraseña', fn: () => page.getByPlaceholder('Contraseña') },
+      { desc: 'role:textbox Contraseña',fn: () => page.getByRole('textbox', { name: /contraseña|password|clave/i }) },
+      { desc: 'css:#txtPasswordLogin',  fn: () => page.locator('#txtPasswordLogin') },
+      { desc: 'css:input[type=password]',fn: () => page.locator('input[type="password"]') },
+    ], booking.password, 5000);
+    console.log(`   ↳ Password filled via: ${pwdMethod.method}`);
     await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
 
-    // Click login
-    await page.click(S.loginSubmitBtn);
+    // ── Click login button ──
+    const loginMethod = await smartLocate(page, [
+      { desc: 'role:button Iniciar',   fn: () => page.getByRole('button', { name: /iniciar sesión|entrar|acceder|login|ingresar/i }) },
+      { desc: 'text:Iniciar sesión',   fn: () => page.getByText(/iniciar sesión|entrar|acceder/i) },
+      { desc: 'css:#btnLoginUsuario',  fn: () => page.locator('#btnLoginUsuario') },
+      { desc: 'css:button[type=submit]',fn: () => page.locator('button[type="submit"], input[type="submit"]') },
+    ]);
+    await loginMethod.locator.click();
+    console.log(`   ↳ Login clicked via: ${loginMethod.method}`);
     await page.waitForLoadState('networkidle', { timeout: 15000 });
     await randomDelay(200, 400);
 
@@ -729,17 +828,31 @@ async function executeSingleBooking(booking, targetDay) {
     }
 
     // ── Step 2b: Click the target date on the calendar ─────────────────
-    console.log(`   ↳ Clicking date: ${dateStr}…`);
+    console.log(`   ↳ Clicking date: ${dateStr} (day ${dayNum})…`);
     try {
-      const dateSelector = S.dateCell(dateStr);
-      await page.waitForSelector(dateSelector, { timeout: 5000 });
+      const dateMethod = await smartLocate(page, [
+        // Semantic: find a gridcell with the day number
+        { desc: 'role:gridcell day', fn: () => page.getByRole('gridcell', { name: new RegExp(`^${dayNum}$`) }) },
+        // Semantic: find a link/button with the day number (common in calendar widgets)
+        { desc: 'role:link day',     fn: () => page.getByRole('link', { name: new RegExp(`^${dayNum}$`) }) },
+        { desc: 'role:button day',   fn: () => page.getByRole('button', { name: new RegExp(`^${dayNum}$`) }) },
+        // Text-based: any element whose visible text is exactly the day number
+        { desc: 'text:exact day',    fn: () => page.getByText(dayNum, { exact: true }) },
+        // CSS: data attributes (common in FullCalendar and similar)
+        { desc: 'css:[data-date]',   fn: () => page.locator(`[data-date="${dateStr}"], [data-fecha="${dateStr}"]`) },
+        // CSS: any clickable td/div containing the day number
+        { desc: 'css:td a day',      fn: () => page.locator(`td a:has-text("${dayNum}"), td:has-text("${dayNum}"), .fc-day:has-text("${dayNum}")`) },
+      ], 5000);
       await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-      await page.click(dateSelector);
+      await dateMethod.locator.click();
       await page.waitForLoadState('networkidle', { timeout: 10000 });
       await randomDelay(300, 500);
-      console.log(`   ✅ Date selected. Booking form should now be visible.`);
+      console.log(`   ✅ Date selected via: ${dateMethod.method}. Booking form should now be visible.`);
     } catch (dateErr) {
       console.log(`   ⚠️  Could not click date (${dateErr.message}). Trying to continue…`);
+      // Dump page content for debugging
+      const pageTitle = await page.title();
+      console.log(`   🔍 Current page title: "${pageTitle}", URL: ${page.url()}`);
     }
 
     // ── Step 3: Wait for the exact strike moment ─────────────────────────
@@ -761,37 +874,53 @@ async function executeSingleBooking(booking, targetDay) {
     // ═══════════════════ BOOKING FORM ═══════════════════════════════════
     // After clicking a date, TeeOne shows the booking form with:
     //   Recorrido → Hoyos → Jugadores → Hora de Juego → CAPTCHA → Bloquear
+    // We use semantic locators that work by READING LABEL TEXT,
+    // so they work regardless of CSS classes or IDs.
 
     // ── Step A: Select Recorrido (default "Tee 1") ──────────────────────
     try {
-      await page.waitForSelector(S.recorridoSelect, { timeout: 5000 });
-      await page.selectOption(S.recorridoSelect, { label: S.recorridoValue });
-      await randomDelay(100, 200);
-      console.log(`   ✅ Recorrido: ${S.recorridoValue}`);
+      const rMethod = await smartSelect(page, [
+        { desc: 'label:Recorrido',   fn: () => page.getByLabel('Recorrido') },
+        { desc: 'label:Tee',         fn: () => page.getByLabel(/Tee|Recorrido|Campo/i) },
+        { desc: 'role:combobox Tee', fn: () => page.getByRole('combobox', { name: /recorrido|tee|campo/i }) },
+        { desc: 'css:select Tee',    fn: () => page.locator('select:has(option:has-text("Tee 1")), select:has(option:has-text("Tee"))') },
+        { desc: 'css:#recorrido',    fn: () => page.locator('#recorrido, select[name*="recorrido" i], select[name*="Recorrido"]') },
+      ], { label: S.recorridoValue });
+      console.log(`   ✅ Recorrido: ${S.recorridoValue} (via: ${rMethod.method})`);
     } catch (e) { console.log(`   ⚠️  Recorrido select skipped: ${e.message}`); }
 
     // ── Step B: Select Hoyos (default "18") ─────────────────────────────
     try {
-      await page.waitForSelector(S.hoyosSelect, { timeout: 3000 });
-      await page.selectOption(S.hoyosSelect, { label: S.hoyosValue });
-      await randomDelay(100, 200);
-      console.log(`   ✅ Hoyos: ${S.hoyosValue}`);
+      const hMethod = await smartSelect(page, [
+        { desc: 'label:Hoyos',          fn: () => page.getByLabel(/Hoyos|Número de hoyos|Hoyo/i) },
+        { desc: 'role:combobox Hoyos',  fn: () => page.getByRole('combobox', { name: /hoyos|hoyo/i }) },
+        { desc: 'css:select 18',        fn: () => page.locator('select:has(option:has-text("18"))') },
+        { desc: 'css:#hoyos',           fn: () => page.locator('#hoyos, #numHoyos, select[name*="hoyos" i], select[name*="Hoyos"]') },
+      ], { label: S.hoyosValue });
+      console.log(`   ✅ Hoyos: ${S.hoyosValue} (via: ${hMethod.method})`);
     } catch (e) { console.log(`   ⚠️  Hoyos select skipped: ${e.message}`); }
 
     // ── Step C: Select Jugadores (default "1", personal use) ────────────
     try {
-      await page.waitForSelector(S.jugadoresSelect, { timeout: 3000 });
-      await page.selectOption(S.jugadoresSelect, { label: S.jugadoresValue });
-      await randomDelay(100, 200);
-      console.log(`   ✅ Jugadores: ${S.jugadoresValue}`);
+      const jMethod = await smartSelect(page, [
+        { desc: 'label:Jugadores',         fn: () => page.getByLabel(/Jugadores|Número de jugadores|Jugador/i) },
+        { desc: 'role:combobox Jugadores', fn: () => page.getByRole('combobox', { name: /jugador/i }) },
+        { desc: 'css:select 1 player',     fn: () => page.locator('select:has(option:has-text("1"))') },
+        { desc: 'css:#jugadores',          fn: () => page.locator('#jugadores, #numJugadores, select[name*="jugador" i], select[name*="Jugador"]') },
+      ], { label: S.jugadoresValue });
+      console.log(`   ✅ Jugadores: ${S.jugadoresValue} (via: ${jMethod.method})`);
     } catch (e) { console.log(`   ⚠️  Jugadores select skipped: ${e.message}`); }
 
     // ── Step D: Select Hora de Juego ────────────────────────────────────
     try {
-      await page.waitForSelector(S.horaSelect, { timeout: 5000 });
-      await page.selectOption(S.horaSelect, { label: booking.hora });
+      const tMethod = await smartSelect(page, [
+        { desc: 'label:Hora',             fn: () => page.getByLabel(/Hora|Hora de juego|Horario/i) },
+        { desc: 'role:combobox Hora',     fn: () => page.getByRole('combobox', { name: /hora|horario/i }) },
+        { desc: 'css:select time',        fn: () => page.locator('select:has(option:has-text("08:00"))') },
+        { desc: 'css:#hora',              fn: () => page.locator('#hora, #horaJuego, #horaSalida, select[name*="hora" i], select[name*="Hora"]') },
+      ], { label: booking.hora });
       await randomDelay(100, 200);
-      console.log(`   ✅ Hora de Juego: ${booking.hora}`);
+      console.log(`   ✅ Hora de Juego: ${booking.hora} (via: ${tMethod.method})`);
     } catch (e) {
       console.log(`   ❌ Failed to select Hora: ${e.message}`);
       return {
@@ -825,12 +954,16 @@ async function executeSingleBooking(booking, targetDay) {
     // ── Step F: Click "Bloquear" ────────────────────────────────────────
     console.log(`   🔒 Clicking BLOQUEAR…`);
     try {
-      await page.waitForSelector(S.bloquearBtn, { timeout: 5000 });
+      const bloquearMethod = await smartLocate(page, [
+        { desc: 'role:button Bloquear', fn: () => page.getByRole('button', { name: /bloquear|bloquea/i }) },
+        { desc: 'text:Bloquear',        fn: () => page.getByText(/bloquear|bloquea/i) },
+        { desc: 'css:#btnBloquear',     fn: () => page.locator('#btnBloquear, .btn-bloquear, button.bloquear, input[type="submit"][value*="Bloquear" i], button:has-text("Bloquear"), button:has-text("BLOQUEAR")') },
+      ]);
       await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-      await page.click(S.bloquearBtn);
+      await bloquearMethod.locator.click();
       await page.waitForLoadState('networkidle', { timeout: 10000 });
       await randomDelay(300, 500);
-      console.log(`   ✅ Bloquear clicked. 3-minute confirmation window open.`);
+      console.log(`   ✅ Bloquear clicked (via: ${bloquearMethod.method}). 3-minute confirmation window open.`);
     } catch (e) {
       console.log(`   ❌ Bloquear failed: ${e.message}`);
       return {
@@ -846,11 +979,13 @@ async function executeSingleBooking(booking, targetDay) {
 
     // ── Step G: Select Jugador (self — should be auto-selected) ─────────
     try {
-      await page.waitForSelector(S.jugadorConfirmSelect, { timeout: 5000 });
-      // Personal user → first option is usually the logged-in user
-      await page.selectOption(S.jugadorConfirmSelect, { index: 0 });
+      const jugMethod = await smartSelect(page, [
+        { desc: 'label:Jugador',         fn: () => page.getByLabel(/Jugador|Participante|Titular/i) },
+        { desc: 'role:combobox Jugador', fn: () => page.getByRole('combobox', { name: /jugador|participante|titular/i }) },
+        { desc: 'css:select jugador',    fn: () => page.locator('select:has(option), #jugadorConfirm, .jugador-select, select[name*="jugador" i]') },
+      ], { index: 0 });
       await randomDelay(100, 200);
-      console.log(`   ✅ Jugador confirmed (self).`);
+      console.log(`   ✅ Jugador confirmed (via: ${jugMethod.method}).`);
     } catch (e) {
       console.log(`   ℹ️  Jugador select not found or already set: ${e.message}`);
     }
@@ -858,12 +993,14 @@ async function executeSingleBooking(booking, targetDay) {
     // ── Step H: Check "He leído y aceptado las condiciones" ─────────────
     console.log(`   📝 Checking condiciones de contratación…`);
     try {
-      await page.waitForSelector(S.condicionesCheckbox, { timeout: 5000 });
-      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-      // Use { force: true } in case the checkbox is hidden/styled
-      await page.check(S.condicionesCheckbox, { force: true });
+      const condMethod = await smartCheck(page, [
+        { desc: 'label:Condiciones',   fn: () => page.getByLabel(/he leído|acepto|condiciones de contratación|condiciones/i) },
+        { desc: 'role:checkbox Acepto',fn: () => page.getByRole('checkbox', { name: /condiciones|acepto|he leído|contratación/i }) },
+        { desc: 'text:Condiciones',    fn: () => page.getByText(/he leído y acepto|condiciones de contratación|acepto las condiciones/i) },
+        { desc: 'css:checkbox cond',   fn: () => page.locator('input[type="checkbox"][name*="condicion" i], input[type="checkbox"][name*="acepto" i], input[type="checkbox"][name*="termino" i], #aceptoCondiciones, #chkCondiciones, input[id*="condicion" i]') },
+      ]);
       await randomDelay(100, 200);
-      console.log(`   ✅ Condiciones checkbox checked.`);
+      console.log(`   ✅ Condiciones checked (via: ${condMethod.method}).`);
     } catch (e) {
       console.log(`   ❌ Condiciones checkbox failed: ${e.message}`);
       return {
@@ -877,11 +1014,16 @@ async function executeSingleBooking(booking, targetDay) {
     // ── Step I: Click "Reservar" (final confirm) ────────────────────────
     console.log(`   🏆 Clicking RESERVAR (final confirmation)…`);
     try {
-      await page.waitForSelector(S.reservarBtn, { timeout: 5000 });
+      const reservarMethod = await smartLocate(page, [
+        { desc: 'role:button Reservar', fn: () => page.getByRole('button', { name: /reservar|confirmar reserva|realizar reserva/i }) },
+        { desc: 'text:Reservar',        fn: () => page.getByText(/reservar|confirmar/i) },
+        { desc: 'css:#btnReservar',     fn: () => page.locator('#btnReservar, .btn-reservar, button.reservar, input[type="submit"][value*="Reservar" i], button:has-text("Reservar"), button:has-text("RESERVAR")') },
+      ]);
       await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-      await page.click(S.reservarBtn);
+      await reservarMethod.locator.click();
       await page.waitForLoadState('networkidle', { timeout: 10000 });
       await randomDelay(500, 1000);
+      console.log(`   🏆 Reservar clicked (via: ${reservarMethod.method}).`);
     } catch (e) {
       console.log(`   ❌ Reservar click failed: ${e.message}`);
       return {
