@@ -1,22 +1,19 @@
 {
-  "name": "golf-bot-roborock",
+  "name": "golf-bot-lomas",
   "version": "1.0.0",
   "description": "Automated golf tee-time booking system for Real Club de Golf Lomas Bosque (Madrid) on TeeOne.golf — senior-accessible UI + millisecond-precision Playwright automation engine.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "render-build": "npx playwright install --with-deps chromium"
+    "start": "node server.js"
   },
   "keywords": [
     "golf",
     "tee-time",
     "automation",
     "playwright",
-    "senior-accessible",
-    "clapphouse",
-    "golfspain"
+    "senior-accessible"
   ],
-  "author": "Golf Bot Team",
+  "author": "Open Source Community",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"

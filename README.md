@@ -187,7 +187,7 @@ The frontend will be served directly from the root URL since GitHub Pages deploy
 Once both are deployed:
 
 1. Open your GitHub Pages URL on your phone
-2. Enter your Clapphouse credentials
+2. Enter your TeeOne / Lomas Bosque credentials
 3. Configure your booking preferences
 4. Tap **"GUARDAR Y CONFIGURAR RESERVA AUTOMÁTICA"**
 5. The frontend sends your booking to the Render backend
@@ -196,28 +196,13 @@ Once both are deployed:
 
 ---
 
-## ⚠️ Important: Configure Clapphouse Selectors
+## ⚠️ Important: Verify TeeOne Selectors
 
-The automation engine uses CSS selectors to interact with the Clapphouse website. These selectors **must match the actual Clapphouse DOM**. Before going live:
+The automation engine uses CSS selectors to interact with the TeeOne platform. Login selectors have been verified from the actual HTML. Calendar and booking selectors use fallback chains. Before going live:
 
-1. Open the Clapphouse/GolfSpain website in Chrome
-2. Right-click → **Inspect** on the login fields, tee-sheet rows, booking buttons, and confirmation modal
-3. Update the `CONFIG.selectors` object in `server.js`:
-
-```javascript
-selectors: {
-  loginUrl:        'https://clapphouse.golfspain.com/login',   // ← correct URL?
-  usernameField:   'input[name="email"]',                       // ← correct selector?
-  passwordField:   'input[type="password"]',                    // ← correct selector?
-  loginSubmitBtn:  'button[type="submit"]',                     // ← correct selector?
-  teeSheetUrl:     'https://clapphouse.golfspain.com/tee-sheet',// ← correct URL?
-  teeTimeRow:      (time) => `[data-tee-time="${time}"]`,       // ← correct pattern?
-  bookSlotBtn:     'button.reserve',                            // ← correct selector?
-  modalContainer:  '.confirmation-popup',                       // ← correct selector?
-  termsCheckbox:   '#accept-terms',                             // ← correct selector?
-  confirmBtn:      'button:has-text("Confirmar")',              // ← correct selector?
-},
-```
+1. Log into TeeOne and navigate to the calendar page
+2. Right-click → **Inspect** on the calendar grid, time slots, booking form, and confirmation elements
+3. Update the `CONFIG.selectors` object in `server.js` if the fallback chains don't match
 
 The current selectors use **fallback chains** (multiple selectors separated by commas) so there's a good chance they work out of the box. Test thoroughly with a non-critical booking first.
 
