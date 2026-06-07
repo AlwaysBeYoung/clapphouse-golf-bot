@@ -93,10 +93,10 @@ const CONFIG = {
       'select[name*="recorrido"]',
       'select[name*="Recorrido"]',
       '#recorrido',
-      'select:has(option:has-text("Tee 1"))',
+      'select:has(option:has-text("TEE 1"))',
       'select:has(option:has-text("Tee"))',
     ].join(', '),
-    recorridoValue: 'Tee 1',
+    recorridoValue: 'TEE 1',   // VERIFIED: TeeOne shows uppercase
 
     // Step B: Número de Hoyos dropdown → default "18"
     hoyosSelect: [
@@ -883,7 +883,7 @@ async function executeSingleBooking(booking, targetDay) {
         { desc: 'label:Recorrido',   fn: () => page.getByLabel('Recorrido') },
         { desc: 'label:Tee',         fn: () => page.getByLabel(/Tee|Recorrido|Campo/i) },
         { desc: 'role:combobox Tee', fn: () => page.getByRole('combobox', { name: /recorrido|tee|campo/i }) },
-        { desc: 'css:select Tee',    fn: () => page.locator('select:has(option:has-text("Tee 1")), select:has(option:has-text("Tee"))') },
+        { desc: 'css:select Tee',    fn: () => page.locator('select:has(option:has-text("TEE 1")), select:has(option:has-text("Tee"))') },
         { desc: 'css:#recorrido',    fn: () => page.locator('#recorrido, select[name*="recorrido" i], select[name*="Recorrido"]') },
       ], { label: S.recorridoValue });
       console.log(`   ✅ Recorrido: ${S.recorridoValue} (via: ${rMethod.method})`);
