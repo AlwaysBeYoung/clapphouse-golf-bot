@@ -1,0 +1,37 @@
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║     Render Blueprint — Infrastructure as Code (IaC)            ║
+# ║     clapphouse-golf-bot  |  Auto-deploys on every git push     ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# How to use:
+#   1. Push this file to your GitHub repo (main branch)
+#   2. Go to Render Dashboard → Blueprints → "New Blueprint Instance"
+#   3. Connect your GitHub repo — Render auto-detects this file
+#   4. Click "Apply" — the web service is provisioned automatically
+#
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ── Backend Web Service (Express + Playwright) ──────────────────────
+  - type: web
+    name: clapphouse-golf-bot-backend
+    env: node
+    region: frankfurt    # Closest to Spain for lowest latency
+    plan: free           # Upgrade to 'starter' ($7/mo) for always-on
+    buildCommand: npm install && npx playwright install --with-deps chromium
+    startCommand: node server.js
+    healthCheckPath: /api/status
+    autoDeploy: yes
+    envVars:
+      - key: TZ
+        value: Europe/Madrid
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+
+    # ── Scaling (free tier: 1 instance, spins down after 15 min idle) ──
+    # The server self-schedules via setTimeout — it will wake up
+    # at 19:59:50 even if the instance was idle. For guaranteed uptime
+    # at strike time, upgrade to 'starter' plan or set up an external
+    # cron job (e.g. UptimeRobot) to ping /api/status every 5 min.

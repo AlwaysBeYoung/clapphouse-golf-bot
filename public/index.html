@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=2.0">
+  <meta name="theme-color" content="#1e4620">
+  <meta name="description" content="Reserva Automática de Golf — Sistema senior-friendly para Clapphouse/GolfSpain. Configure su reserva y el sistema la ejecutará automáticamente a las 20:00.">
+
+  <title>⛳ Golf Bot — Reserva Automática</title>
+
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════
+       SENIOR-ACCESSIBLE DARK EMERALD THEME
+       All text ≥ 22px. All interactive elements are oversized.
+       High contrast. Minimal cognitive load.
+       ═══════════════════════════════════════════════════════════════════ */
+
+    :root {
+      --emerald-dark:   #1e4620;
+      --emerald-mid:    #2a5e2d;
+      --emerald-light:  #3a7d3e;
+      --gold:           #c9a84c;
+      --gold-light:     #f0e6c8;
+      --white:          #ffffff;
+      --pastel-yellow:  #fdf6d0;
+      --soft-gray:      #b0b0b0;
+      --error-red:      #ff6b6b;
+      --success-green:  #5cdb5c;
+      --card-bg:        rgba(255, 255, 255, 0.06);
+      --card-border:    rgba(255, 255, 255, 0.12);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { font-size: 18px; } /* Base for rem scaling */
+
+    body {
+      background-color: var(--emerald-dark);
+      color: var(--white);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 1.35rem;           /* ~24px */
+      line-height: 1.6;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      /* Subtle emerald gradient texture */
+      background-image:
+        radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 50% 100%, rgba(0,0,0,0.15) 0%, transparent 60%);
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────────── */
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 1.2rem 1.2rem 2rem;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+
+    header {
+      text-align: center;
+      padding: 1.8rem 0 0.8rem;
+    }
+
+    .logo-icon {
+      font-size: 3.2rem;
+      display: block;
+      margin-bottom: 0.3rem;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    }
+
+    h1 {
+      font-size: 2rem;              /* ~36px */
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--pastel-yellow);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      margin-bottom: 0.3rem;
+    }
+
+    .subtitle {
+      font-size: 1.2rem;            /* ~22px */
+      color: var(--gold-light);
+      opacity: 0.9;
+      font-weight: 400;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────────── */
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.5rem 1.3rem;
+      margin-bottom: 1.3rem;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    .card-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--gold);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-title .icon { font-size: 1.6rem; }
+
+    /* ── Form Elements ───────────────────────────────────────────────── */
+
+    label {
+      display: block;
+      font-size: 1.25rem;           /* ~22px */
+      font-weight: 600;
+      color: var(--pastel-yellow);
+      margin-bottom: 0.4rem;
+      margin-top: 1rem;
+    }
+
+    label:first-of-type { margin-top: 0; }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      display: block;
+      width: 100%;
+      padding: 1rem 1.1rem;
+      font-size: 1.35rem;           /* ~24px */
+      font-family: inherit;
+      color: #1a1a1a;
+      background: var(--white);
+      border: 3px solid transparent;
+      border-radius: 12px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.25);
+    }
+
+    /* Custom dropdown arrow for select */
+    select {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path fill='%231e4620' d='M7 10l5 5 5-5z'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 0.8rem center;
+      background-size: 1.8rem;
+      padding-right: 3rem;
+      cursor: pointer;
+    }
+
+    /* ── Thursday Checkboxes ─────────────────────────────────────────── */
+
+    .checkbox-group {
+      margin-top: 1rem;
+      padding: 0.9rem 1.1rem;
+      background: rgba(255,255,255,0.08);
+      border-radius: 12px;
+      border: 2px dashed var(--gold);
+    }
+
+    .checkbox-group legend {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--gold-light);
+      margin-bottom: 0.6rem;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.5rem 0;
+      font-size: 1.3rem;
+      cursor: pointer;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      width: 1.8rem;
+      height: 1.8rem;
+      accent-color: var(--gold);
+      cursor: pointer;
+      transform: scale(1.3);
+      -webkit-transform: scale(1.3);
+    }
+
+    /* ── Giant Submit Button ─────────────────────────────────────────── */
+
+    .btn-submit {
+      display: block;
+      width: 100%;
+      padding: 1.3rem 1rem;
+      margin-top: 1.2rem;
+      font-size: 1.4rem;            /* ~25px */
+      font-weight: 800;
+      font-family: inherit;
+      text-align: center;
+      letter-spacing: 0.03em;
+      color: var(--white);
+      background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
+      border: 3px solid rgba(255,255,255,0.2);
+      border-radius: 16px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.97);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+      background: linear-gradient(180deg, #3d8b40 0%, #256b28 100%);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Status & Countdown ──────────────────────────────────────────── */
+
+    .status-section {
+      display: none;
+      text-align: center;
+      padding: 1.3rem;
+      background: rgba(0,0,0,0.2);
+      border-radius: 14px;
+      margin-top: 1.2rem;
+      border: 2px solid var(--card-border);
+    }
+
+    .status-section.visible { display: block; }
+
+    .status-text {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--gold-light);
+      margin-bottom: 0.8rem;
+      line-height: 1.5;
+    }
+
+    .status-text.success { color: var(--success-green); }
+    .status-text.failed  { color: var(--error-red); }
+
+    .countdown-display {
+      font-size: 3.5rem;            /* Giant countdown */
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: var(--pastel-yellow);
+      text-shadow: 0 3px 12px rgba(0,0,0,0.4);
+      letter-spacing: 0.04em;
+      margin: 0.5rem 0;
+      font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
+    }
+
+    .countdown-label {
+      font-size: 1.1rem;
+      color: var(--soft-gray);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Security Notice ─────────────────────────────────────────────── */
+
+    .security-notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+      padding: 0.8rem 1rem;
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+      font-size: 1rem;              /* ~18px — slightly smaller for legal text */
+      color: var(--soft-gray);
+      line-height: 1.5;
+      border-left: 3px solid var(--gold);
+    }
+
+    .security-notice .lock-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      margin-top: 0.05rem;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────── */
+
+    footer {
+      text-align: center;
+      padding: 1.5rem 0.8rem 2.5rem;
+      font-size: 0.95rem;
+      color: var(--soft-gray);
+      opacity: 0.8;
+      line-height: 1.6;
+    }
+
+    footer .footer-icon { font-size: 1.2rem; }
+
+    /* ── Loading Spinner ─────────────────────────────────────────────── */
+
+    .spinner {
+      display: none;
+      width: 2.5rem;
+      height: 2.5rem;
+      border: 4px solid rgba(255,255,255,0.2);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0.8rem auto;
+    }
+
+    .spinner.visible { display: block; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive Tweaks ───────────────────────────────────────────── */
+
+    @media (max-width: 400px) {
+      html { font-size: 16px; }
+      .container { padding: 0.8rem 0.8rem 1.5rem; }
+      .countdown-display { font-size: 2.5rem; }
+    }
+
+    @media (min-width: 768px) {
+      html { font-size: 20px; }
+      .container { padding: 2rem 1.5rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- ═════════════════════ HEADER ═════════════════════ -->
+    <header>
+      <span class="logo-icon" aria-hidden="true">⛳</span>
+      <h1>Golf Bot</h1>
+      <p class="subtitle">Reserva Automática Inteligente</p>
+    </header>
+
+    <!-- ═════════════════════ CREDENTIALS CARD ═════════════════════ -->
+    <div class="card" id="credentials-card">
+      <div class="card-title">
+        <span class="icon">🔐</span> Sus Credenciales
+      </div>
+
+      <label for="username">Usuario (Email)</label>
+      <input
+        type="text"
+        id="username"
+        name="username"
+        placeholder="ej. suemail@ejemplo.com"
+        autocomplete="username"
+        inputmode="email"
+      >
+
+      <label for="password">Contraseña</label>
+      <input
+        type="password"
+        id="password"
+        name="password"
+        placeholder="••••••••"
+        autocomplete="current-password"
+      >
+
+      <!-- 🔒  SECURITY & PRIVACY COPY  🔒 -->
+      <div class="security-notice">
+        <span class="lock-icon" aria-hidden="true">🛡️</span>
+        <span>
+          <strong>Compromiso de Seguridad y Privacidad Absoluta:</strong>
+          Sus credenciales NUNCA se guardarán en ninguna base de datos externa.
+          Los datos permanecen encriptados localmente en su propio móvil.
+          El sistema en la nube actúa como un asistente ciego: procesa el inicio
+          de sesión a las 20:00 y borra completamente sus datos de la memoria
+          RAM a las 20:01.
+        </span>
+      </div>
+    </div>
+
+    <!-- ═════════════════════ BOOKING CONFIG CARD ═════════════════════ -->
+    <div class="card" id="booking-card">
+      <div class="card-title">
+        <span class="icon">🏌️</span> Configurar Reserva
+      </div>
+
+      <label for="hoyos">Hoyo</label>
+      <select id="hoyos" name="hoyos">
+        <option value="18" selected>18 Hoyos</option>
+        <option value="9">9 Hoyos</option>
+      </select>
+
+      <label for="jugadores">Número de Jugadores</label>
+      <select id="jugadores" name="jugadores">
+        <option value="4" selected>4 Jugadores</option>
+        <option value="3">3 Jugadores</option>
+        <option value="2">2 Jugadores</option>
+        <option value="1">1 Jugador</option>
+      </select>
+
+      <label for="hora">Hora Deseada</label>
+      <select id="hora" name="hora">
+        <option value="08:00">08:00 – 08:30</option>
+        <option value="08:30">08:30 – 09:00</option>
+        <option value="09:00">09:00 – 09:30</option>
+        <option value="09:30">09:30 – 10:00</option>
+        <option value="10:00">10:00 – 10:30</option>
+        <option value="10:30">10:30 – 11:00</option>
+        <option value="11:00">11:00 – 11:30</option>
+        <option value="11:30">11:30 – 12:00</option>
+        <option value="12:00">12:00 – 12:30</option>
+        <option value="12:30">12:30 – 13:00</option>
+        <option value="13:00">13:00 – 13:30</option>
+        <option value="13:30">13:30 – 14:00</option>
+        <option value="14:00">14:00 – 14:30</option>
+        <option value="14:30">14:30 – 15:00</option>
+        <option value="15:00">15:00 – 15:30</option>
+        <option value="15:30">15:30 – 16:00</option>
+        <option value="16:00">16:00 – 16:30</option>
+      </select>
+
+      <!-- ── Thursday Dual-Booking Checkboxes ─────────────────────────── -->
+      <div class="checkbox-group" id="thursday-options" style="display: none;">
+        <legend>📅 Hoy es <strong>Jueves</strong> — Puede reservar ambos días del fin de semana:</legend>
+        <div class="checkbox-item">
+          <input type="checkbox" id="chk-sabado" name="target-sabado" checked>
+          <label for="chk-sabado" style="margin: 0; cursor: pointer;">
+            <strong>Sábado</strong> <span id="sabado-date" style="opacity:0.7; font-size:1rem;"></span>
+          </label>
+        </div>
+        <div class="checkbox-item">
+          <input type="checkbox" id="chk-domingo" name="target-domingo">
+          <label for="chk-domingo" style="margin: 0; cursor: pointer;">
+            <strong>Domingo</strong> <span id="domingo-date" style="opacity:0.7; font-size:1rem;"></span>
+          </label>
+        </div>
+        <p style="font-size:1rem; margin-top:0.5rem; color:var(--gold-light); opacity:0.8;">
+          ✅ Si selecciona ambos, el sistema lanzará <strong>dos reservas en paralelo</strong> a las 20:00:00.
+        </p>
+      </div>
+    </div>
+
+    <!-- ═════════════════════ GIANT SUBMIT BUTTON ═════════════════════ -->
+    <button class="btn-submit" id="btn-submit" type="button">
+      ⛳ GUARDAR Y CONFIGURAR RESERVA AUTOMÁTICA
+    </button>
+
+    <div class="spinner" id="spinner" aria-label="Procesando..."></div>
+
+    <!-- ═════════════════════ STATUS & COUNTDOWN ═════════════════════ -->
+    <div class="status-section" id="status-section">
+      <div class="status-text" id="status-text">
+        Estado: Guardado con éxito. Esperando en la cola para el lanzamiento automático de las 20:00.
+      </div>
+      <div class="countdown-label">Tiempo restante hasta el lanzamiento</div>
+      <div class="countdown-display" id="countdown">--:--:--</div>
+      <div class="spinner visible" id="polling-spinner" style="width:1.5rem; height:1.5rem; border-width:3px;"></div>
+      <p style="font-size:0.9rem; color:var(--soft-gray); margin-top:0.5rem;" id="booking-id-display"></p>
+    </div>
+
+    <!-- ═════════════════════ FOOTER ═════════════════════ -->
+    <footer>
+      <p>
+        <span class="footer-icon">💻</span>
+        <strong>Código Abierto y Transparente:</strong>
+        El 100% de nuestro código fuente es público en GitHub para su revisión
+        técnica o familiar. Respetamos rigurosamente su privacidad y la normativa europea.
+      </p>
+    </footer>
+
+  </div>
+
+  <!-- ═════════════════════ APPLICATION SCRIPT ═════════════════════ -->
+  <script>
+  (function () {
+    'use strict';
+
+    // ─── Configuration ──────────────────────────────────────────────────
+    // ⚠️  CHANGE THIS to your Render/Railway backend URL before deploying
+    //     to GitHub Pages. Example: 'https://golf-bot.onrender.com'
+    // 🔗 PRODUCTION: Points to the Render backend service.
+    //    The Render Blueprint creates the service with this exact name,
+    //    so the URL below will be correct once deployed.
+    //    For LOCAL DEV: change to 'http://localhost:3000'
+    const BACKEND_URL = 'https://clapphouse-golf-bot-backend.onrender.com';
+
+    // ─── DOM References ─────────────────────────────────────────────────
+    const $ = (sel) => document.querySelector(sel);
+    const usernameInput    = $('#username');
+    const passwordInput    = $('#password');
+    const hoyosSelect      = $('#hoyos');
+    const jugadoresSelect  = $('#jugadores');
+    const horaSelect       = $('#hora');
+    const btnSubmit        = $('#btn-submit');
+    const spinner          = $('#spinner');
+    const statusSection    = $('#status-section');
+    const statusText       = $('#status-text');
+    const countdownEl      = $('#countdown');
+    const bookingIdDisplay = $('#booking-id-display');
+    const thursdayOptions  = $('#thursday-options');
+    const chkSabado        = $('#chk-sabado');
+    const chkDomingo       = $('#chk-domingo');
+    const sabadoDateEl     = $('#sabado-date');
+    const domingoDateEl    = $('#domingo-date');
+
+    // ─── State ──────────────────────────────────────────────────────────
+    let currentBookingId  = null;
+    let countdownInterval = null;
+    let statusPollInterval = null;
+    let bookingFinalized  = false; // true once we have a terminal result
+
+    // ─── LocalStorage: Credential Persistence ───────────────────────────
+    const STORAGE_KEY = 'golfbot_credentials_v1';
+
+    function loadCredentials() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        // Basic validation
+        if (data.username && data.password) {
+          return { username: data.username, password: data.password };
+        }
+        return null;
+      } catch (e) {
+        console.warn('Could not load credentials from localStorage:', e);
+        return null;
+      }
+    }
+
+    function saveCredentials(username, password) {
+      try {
+        const data = JSON.stringify({ username, password });
+        localStorage.setItem(STORAGE_KEY, data);
+      } catch (e) {
+        console.warn('Could not save credentials to localStorage:', e);
+      }
+    }
+
+    // ─── Date Helpers (for Thursday logic in frontend) ─────────────────
+
+    function getSpanishDayName(date) {
+      const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      return days[date.getDay()];
+    }
+
+    function formatDateSpanish(date) {
+      const d = String(date.getDate()).padStart(2, '0');
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const y = date.getFullYear();
+      return `${d}/${m}/${y}`;
+    }
+
+    function getDPlus(days) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+
+    // ─── Thursday Detection & UI ────────────────────────────────────────
+
+    function setupThursdayUI() {
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0=Sun, 4=Thu
+
+      if (dayOfWeek === 4) {
+        // Thursday! Show dual-day checkboxes
+        const sabado = getDPlus(2);
+        const domingo = getDPlus(3);
+
+        sabadoDateEl.textContent = `(${getSpanishDayName(sabado)} ${formatDateSpanish(sabado)})`;
+        domingoDateEl.textContent = `(${getSpanishDayName(domingo)} ${formatDateSpanish(domingo)})`;
+        thursdayOptions.style.display = 'block';
+      } else {
+        thursdayOptions.style.display = 'none';
+      }
+    }
+
+    // ─── Target Days Resolver ───────────────────────────────────────────
+
+    function getTargetDays() {
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+
+      if (dayOfWeek === 4) {
+        // Thursday: user can choose Sat, Sun, or both
+        const days = [];
+        if (chkSabado.checked) days.push('sabado');
+        if (chkDomingo.checked) days.push('domingo');
+        return days;
+      }
+
+      // Normal days: always D+2 (which resolves to the correct day label)
+      const d2 = getDPlus(2);
+      const d2Day = d2.getDay();
+      // Map day-of-week to our key
+      const dayMap = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
+      return [dayMap[d2Day]];
+    }
+
+    // ─── Countdown Timer ────────────────────────────────────────────────
+
+    function updateCountdown() {
+      const now = new Date();
+      const target = new Date(now);
+      target.setHours(20, 0, 0, 0);
+
+      if (now >= target) {
+        // Past 20:00 today — countdown to tomorrow 20:00
+        target.setDate(target.getDate() + 1);
+      }
+
+      const diff = Math.max(0, target - now);
+
+      const totalSec = Math.floor(diff / 1000);
+      const hours    = Math.floor(totalSec / 3600);
+      const minutes  = Math.floor((totalSec % 3600) / 60);
+      const seconds  = totalSec % 60;
+
+      countdownEl.textContent =
+        String(hours).padStart(2, '0') + ':' +
+        String(minutes).padStart(2, '0') + ':' +
+        String(seconds).padStart(2, '0');
+    }
+
+    function startCountdown() {
+      updateCountdown();
+      countdownInterval = setInterval(updateCountdown, 1000);
+    }
+
+    function stopCountdown() {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }
+
+    // ─── Status Polling ─────────────────────────────────────────────────
+
+    async function pollBookingStatus() {
+      if (!currentBookingId || bookingFinalized) return;
+
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/booking/${currentBookingId}`);
+        if (!resp.ok) {
+          // Booking may have been wiped
+          const data = await resp.json();
+          if (data.booking && data.booking.wiped) {
+            displayFinalStatus(data.booking.status, data.message);
+            stopPolling();
+          }
+          return;
+        }
+
+        const data = await resp.json();
+        if (!data.success || !data.booking) return;
+
+        const { status, result } = data.booking;
+
+        if (status === 'success') {
+          displayFinalStatus('success', result);
+          stopPolling();
+        } else if (status === 'failed') {
+          displayFinalStatus('failed', result);
+          stopPolling();
+        } else if (status === 'partial') {
+          displayFinalStatus('partial', result);
+          stopPolling();
+        }
+        // 'pending' or 'in_progress' — keep polling
+      } catch (err) {
+        console.warn('Status poll failed:', err);
+        // Retry on next interval
+      }
+    }
+
+    function startStatusPolling() {
+      pollBookingStatus(); // immediate first poll
+      statusPollInterval = setInterval(pollBookingStatus, 10000); // every 10s
+    }
+
+    function stopPolling() {
+      if (statusPollInterval) {
+        clearInterval(statusPollInterval);
+        statusPollInterval = null;
+      }
+      const pollSpinner = $('#polling-spinner');
+      if (pollSpinner) pollSpinner.style.display = 'none';
+    }
+
+    // ─── Display Final Status ───────────────────────────────────────────
+
+    function displayFinalStatus(status, result) {
+      bookingFinalized = true;
+      stopCountdown();
+      stopPolling();
+
+      const pollSpinner = $('#polling-spinner');
+      if (pollSpinner) pollSpinner.style.display = 'none';
+
+      statusText.classList.remove('success', 'failed');
+
+      if (status === 'success') {
+        statusText.classList.add('success');
+        const outcomes = result?.outcomes || [];
+        const msgs = outcomes.map(o => o.message).join(' | ');
+        statusText.textContent = '✅ ¡Reserva Confirmada! ' + msgs;
+      } else if (status === 'partial') {
+        statusText.classList.add('success');
+        const outcomes = result?.outcomes || [];
+        const successes = outcomes.filter(o => o.success);
+        const failures  = outcomes.filter(o => !o.success);
+        statusText.textContent =
+          '⚠️ Reserva Parcial: ' +
+          successes.length + ' conseguida(s), ' +
+          failures.length + ' fallida(s). ' +
+          failures.map(f => f.message).join(' | ');
+      } else if (status === 'failed') {
+        statusText.classList.add('failed');
+        const outcomes = result?.outcomes || [];
+        statusText.textContent =
+          '❌ Reserva Fallida. ' +
+          outcomes.map(o => o.message).join(' | ') +
+          ' Inténtelo de nuevo para mañana.';
+      }
+
+      countdownEl.textContent = '--:--:--';
+      statusSection.classList.add('visible');
+      btnSubmit.disabled = false;
+      spinner.classList.remove('visible');
+    }
+
+    // ─── Submit Handler ─────────────────────────────────────────────────
+
+    btnSubmit.addEventListener('click', async function () {
+      // ── Validate ────────────────────────────────────────────────────
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value; // don't trim — spaces may be part of pw
+      const hoyos     = hoyosSelect.value;
+      const jugadores = jugadoresSelect.value;
+      const hora      = horaSelect.value;
+      const targetDays = getTargetDays();
+
+      const errors = [];
+
+      if (!username) errors.push('Por favor, introduzca su Usuario (email).');
+      if (!password) errors.push('Por favor, introduzca su Contraseña.');
+      if (targetDays.length === 0) {
+        errors.push('Debe seleccionar al menos un día (Sábado o Domingo).');
+      }
+
+      if (errors.length > 0) {
+        alert('⚠️ ' + errors.join('\n'));
+        return;
+      }
+
+      // ── Persist credentials to localStorage ─────────────────────────
+      saveCredentials(username, password);
+
+      // ── UI: loading state ───────────────────────────────────────────
+      btnSubmit.disabled = true;
+      spinner.classList.add('visible');
+      statusSection.classList.remove('visible');
+      statusText.classList.remove('success', 'failed');
+      statusText.textContent = 'Enviando configuración al servidor…';
+      stopCountdown();
+      stopPolling();
+      bookingFinalized = false;
+
+      // ── Send to backend ─────────────────────────────────────────────
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/booking`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            hoyos,
+            jugadores,
+            hora,
+            targetDays,
+          }),
+        });
+
+        const data = await resp.json();
+
+        if (!data.success) {
+          alert('⚠️ Error: ' + (data.errors || ['Error desconocido']).join('\n'));
+          btnSubmit.disabled = false;
+          spinner.classList.remove('visible');
+          return;
+        }
+
+        // ── Success: show status & start countdown ────────────────────
+        currentBookingId = data.booking.id;
+        bookingIdDisplay.textContent = 'ID de Reserva: ' + currentBookingId;
+
+        statusText.textContent =
+          '✅ Estado: Guardado con éxito. ' +
+          'Esperando en la cola para el lanzamiento automático de las 20:00.';
+
+        statusSection.classList.add('visible');
+        spinner.classList.remove('visible');
+        btnSubmit.disabled = false; // Re-enable in case they want to modify
+
+        startCountdown();
+        startStatusPolling();
+
+      } catch (err) {
+        console.error('Submit error:', err);
+        alert('⚠️ Error de conexión con el servidor. Verifique su conexión a Internet e inténtelo de nuevo.');
+        btnSubmit.disabled = false;
+        spinner.classList.remove('visible');
+        statusText.textContent = 'Error de conexión. Inténtelo de nuevo.';
+      }
+    });
+
+    // ─── Auto-fill credentials on page load ────────────────────────────
+    function autoFillCredentials() {
+      const saved = loadCredentials();
+      if (saved) {
+        usernameInput.value = saved.username;
+        passwordInput.value = saved.password;
+        console.log('🔐 Credenciales cargadas del almacenamiento local seguro.');
+      }
+    }
+
+    // ─── Init ──────────────────────────────────────────────────────────
+    function init() {
+      autoFillCredentials();
+      setupThursdayUI();
+    }
+
+    // Run on DOM ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+
+    // ─── Expose for debugging ──────────────────────────────────────────
+    window.GolfBot = {
+      BACKEND_URL,
+      getTargetDays,
+      loadCredentials,
+      saveCredentials,
+      getBookingId: () => currentBookingId,
+    };
+  })();
+  </script>
+
+</body>
+</html>

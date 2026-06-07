@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Playwright browsers (installed on deploy)
+.playwright/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime
+.tmp/
+.cache/

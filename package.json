@@ -1,0 +1,30 @@
+{
+  "name": "golf-bot-roborock",
+  "version": "1.0.0",
+  "description": "Automated golf tee-time booking system for Spanish senior players on Clapphouse/GolfSpain — ultra-accessible UI + millisecond-precision Playwright automation engine.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "npx playwright install --with-deps chromium"
+  },
+  "keywords": [
+    "golf",
+    "tee-time",
+    "automation",
+    "playwright",
+    "senior-accessible",
+    "clapphouse",
+    "golfspain"
+  ],
+  "author": "Golf Bot Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "playwright": "^1.48.0",
+    "cors": "^2.8.5",
+    "uuid": "^10.0.0"
+  }
+}
