@@ -63,114 +63,133 @@ const CONFIG = {
   // inspecting the page for `data-sitekey` on the reCAPTCHA iframe/div.
   recaptchaSiteKey: process.env.RECAPTCHA_SITEKEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI', // Google's test key
 
-  // ── TeeOne.golf Selectors ──────────────────────────────────────────────
+  // ── TeeOne.golf Selectors (Lomas Bosque) ──────────────────────────────
   // ✅ Login selectors VERIFIED from actual TeeOne HTML (2026-06-07)
-  // ⚠️  Calendar/booking selectors are best-guess based on platform patterns.
-  //     Verify by logging in and inspecting the calendar page in DevTools.
+  // ✅ Booking flow CONFIRMED by user: Date → Recorrido/Hoyos/Jugadores/Hora → CAPTCHA → Bloquear → 3-min window → Condiciones → Reservar
   selectors: {
     // ── Login Page (VERIFIED — exact IDs from TeeOne source) ────────────
     loginUrl:        'https://members.teeone.golf/lomas/?returnUrl=/lomas/calendario',
-    usernameField:   '#txtUsuarioLogin',          // <input id="txtUsuarioLogin">
-    passwordField:   '#txtPasswordLogin',          // <input id="txtPasswordLogin">
-    loginSubmitBtn:  '#btnLoginUsuario',           // <button id="btnLoginUsuario">
+    usernameField:   '#txtUsuarioLogin',
+    passwordField:   '#txtPasswordLogin',
+    loginSubmitBtn:  '#btnLoginUsuario',
 
-    // ── Calendar / Tee Sheet ────────────────────────────────────────────
-    clubId:           '99',                        // <input id="HidIdClub" value="99">
+    // ── Calendar ────────────────────────────────────────────────────────
+    clubId:           '99',
     calendarUrl:      'https://members.teeone.golf/lomas/calendario',
     apiBaseUrl:       'https://api.teeone.golf/InternalMembersEngine/v1',
 
-    // Date cell in the calendar grid — TeeOne uses a jQuery datepicker.
-    // The calendar likely renders <td> cells with data-fecha attributes.
-    // Adjust based on: right-click → Inspect on a clickable date in the calendar.
+    // Clickable date cell in the calendar grid
     dateCell: (dateStr) => [
       `[data-fecha="${dateStr}"]`,
       `td[data-date="${dateStr}"]`,
       `.fc-day[data-date="${dateStr}"]`,
       `td:has(.dia:contains("${dateStr.split('-')[2]}"))`,
+      `a:has-text("${dateStr.split('-')[2]}")`,
     ].join(', '),
 
-    // Tee time slot row — each available time in the tee sheet grid.
-    // TeeOne typically uses a table with rows per time slot.
-    teeTimeRow: (time) => [
-      `[data-hora="${time}"]`,
-      `tr[data-tee-time="${time}"]`,
-      `.slot[data-time="${time}"]`,
-      `tr:has(td:has-text("${time}"))`,
+    // ── Booking Form (after selecting a date) ───────────────────────────
+    // Step A: Recorrido (course/tee) dropdown → default "Tee 1"
+    recorridoSelect: [
+      'select[name*="recorrido"]',
+      'select[name*="Recorrido"]',
+      '#recorrido',
+      'select:has(option:has-text("Tee 1"))',
+      'select:has(option:has-text("Tee"))',
     ].join(', '),
+    recorridoValue: 'Tee 1',
 
-    // Button/link to book the selected slot
-    bookSlotBtn: [
-      'button.reservar',
-      '.btn-reservar',
-      'a.btn-reserva',
-      'button:has-text("Reservar")',
-      'button:has-text("Seleccionar")',
-      '.slot-action button',
-      '.slot-action .btn',
-      'td.accion button',
+    // Step B: Número de Hoyos dropdown → default "18"
+    hoyosSelect: [
+      'select[name*="hoyos"]',
+      'select[name*="Hoyos"]',
+      '#hoyos',
+      '#numHoyos',
+      'select:has(option:has-text("18"))',
     ].join(', '),
+    hoyosValue: '18',
 
-    // ── Booking Form / Modal ────────────────────────────────────────────
-    // After selecting a slot, TeeOne shows a booking form (modal or inline).
-    modalContainer: [
-      '.modal',
-      '.modal-dialog',
-      '[role="dialog"]',
-      '#modalReserva',
-      '.booking-modal',
-      '.panel-reserva',
-      'form.reserva',
-    ].join(', '),
-
-    // Player count dropdown (number of jugadores)
-    playersSelect: [
+    // Step C: Jugadores dropdown → default "1" (personal use)
+    jugadoresSelect: [
       'select[name*="jugador"]',
       'select[name*="Jugador"]',
+      '#jugadores',
       '#numJugadores',
-      'select.jugadores',
-      'select:has(option:has-text("Jugador"))',
+    ].join(', '),
+    jugadoresValue: '1',
+
+    // Step D: Hora de Juego dropdown (08:00-19:30, every 10 min)
+    horaSelect: [
+      'select[name*="hora"]',
+      'select[name*="Hora"]',
+      '#hora',
+      '#horaJuego',
+      'select:has(option:has-text("08:00"))',
     ].join(', '),
 
-    // Terms & conditions checkbox
-    termsCheckbox: [
-      'input[type="checkbox"][name*="termino"]',
+    // ── "Bloquear" button (locks the slot for 3 minutes) ────────────────
+    bloquearBtn: [
+      'button:has-text("Bloquear")',
+      '#btnBloquear',
+      '.btn-bloquear',
+      'button.bloquear',
+      'input[type="submit"][value*="Bloquear"]',
+      'button:has-text("BLOCKEAR")',
+    ].join(', '),
+
+    // ── 3-Minute Confirmation Window ────────────────────────────────────
+    // Step E: Select Jugador (personal use → self, should be auto-selected)
+    jugadorConfirmSelect: [
+      'select[name*="jugador"]',
+      '#jugadorConfirm',
+      '.jugador-select',
+    ].join(', '),
+
+    // Step F: "He leído y aceptado las condiciones de contratación" checkbox
+    condicionesCheckbox: [
       'input[type="checkbox"][name*="condicion"]',
+      'input[type="checkbox"][name*="Condicion"]',
       'input[type="checkbox"][name*="acepto"]',
-      '#aceptarTerminos',
-      '#chkTerminos',
-      '.condiciones input[type="checkbox"]',
-      '.terminos input[type="checkbox"]',
+      'input[type="checkbox"][name*="termino"]',
+      '#aceptoCondiciones',
+      '#chkCondiciones',
+      '.condiciones-contratacion input',
+      'input[id*="condicion"]',
     ].join(', '),
 
-    // Final confirm booking button
-    confirmBtn: [
-      'button:has-text("Confirmar")',
+    // Step G: Final "Reservar" button
+    reservarBtn: [
       'button:has-text("Reservar")',
-      'button:has-text("Aceptar")',
-      '#btnConfirmar',
-      '#btnConfirmarReserva',
-      '.btn-confirmar-reserva',
-      'button.confirmar',
-      'input[type="submit"][value*="Confirmar"]',
+      '#btnReservar',
+      '.btn-reservar',
+      'button.reservar',
       'input[type="submit"][value*="Reservar"]',
+      'button:has-text("RESERVAR")',
     ].join(', '),
 
-    // Success indicator text on the page after booking
+    // ── Success indicators ──────────────────────────────────────────────
     successIndicator: [
       'confirmada',
       'reserva confirmada',
       'reserva realizada',
       'gracias por su reserva',
-      'booking confirmed',
       'su reserva',
     ],
   },
 
-  // Desired tee-time slots the user can pick from
+  // Hora de Juego slots — exactly as shown on TeeOne (08:00-19:30, every 10 min)
   availableTimeSlots: [
-    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-    '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
-    '14:00', '14:30', '15:00', '15:30', '16:00',
+    '08:00','08:10','08:20','08:30','08:40','08:50',
+    '09:00','09:10','09:20','09:30','09:40','09:50',
+    '10:00','10:10','10:20','10:30','10:40','10:50',
+    '11:00','11:10','11:20','11:30','11:40','11:50',
+    '12:00','12:10','12:20','12:30','12:40','12:50',
+    '13:00','13:10','13:20','13:30','13:40','13:50',
+    '14:00','14:10','14:20','14:30','14:40','14:50',
+    '15:00','15:10','15:20','15:30','15:40','15:50',
+    '16:00','16:10','16:20','16:30','16:40','16:50',
+    '17:00','17:10','17:20','17:30','17:40','17:50',
+    '18:00','18:10','18:20','18:30','18:40','18:50',
+    '19:00','19:10','19:20','19:30',
   ],
 };
 
@@ -710,18 +729,17 @@ async function executeSingleBooking(booking, targetDay) {
     }
 
     // ── Step 2b: Click the target date on the calendar ─────────────────
-    // TeeOne shows a calendar grid; you must click the specific date first
-    console.log(`   ↳ Clicking date: ${dateStr} (day ${dayNum})…`);
+    console.log(`   ↳ Clicking date: ${dateStr}…`);
     try {
       const dateSelector = S.dateCell(dateStr);
       await page.waitForSelector(dateSelector, { timeout: 5000 });
       await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
       await page.click(dateSelector);
       await page.waitForLoadState('networkidle', { timeout: 10000 });
-      await randomDelay(200, 400);
-      console.log(`   ↳ Date selected. Tee sheet should now be visible.`);
+      await randomDelay(300, 500);
+      console.log(`   ✅ Date selected. Booking form should now be visible.`);
     } catch (dateErr) {
-      console.log(`   ↳ Could not click date directly (${dateErr.message}). The calendar may auto-show D+2 dates. Continuing…`);
+      console.log(`   ⚠️  Could not click date (${dateErr.message}). Trying to continue…`);
     }
 
     // ── Step 3: Wait for the exact strike moment ─────────────────────────
@@ -733,87 +751,169 @@ async function executeSingleBooking(booking, targetDay) {
       CONFIG.strikeTime.millis
     );
     const remainingMs = msUntil(strikeTarget);
-
     if (remainingMs > 0) {
-      console.log(`⏳ [${booking.id}] ${remainingMs}ms until strike. Waiting precisely…`);
+      console.log(`⏳ [${booking.id}] ${remainingMs}ms until 20:00:00.050. Waiting…`);
       await new Promise(resolve => setTimeout(resolve, remainingMs));
     }
 
-    console.log(`⚡ [${booking.id}] STRIKE! Clicking tee-time slot for ${booking.hora}…`);
+    console.log(`⚡ [${booking.id}] STRIKE! Filling booking form for ${booking.hora}…`);
 
-    // ── Step 4: Click the target time slot ───────────────────────────────
-    const slotSelector = S.teeTimeRow(booking.hora);
-    await page.waitForSelector(slotSelector, { timeout: 5000 });
-    await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-    await page.click(slotSelector);
-    await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+    // ═══════════════════ BOOKING FORM ═══════════════════════════════════
+    // After clicking a date, TeeOne shows the booking form with:
+    //   Recorrido → Hoyos → Jugadores → Hora de Juego → CAPTCHA → Bloquear
 
-    // Click the "book" button inside that row
-    const bookBtn = await page.$(slotSelector + ' ' + S.bookSlotBtn);
-    if (bookBtn) {
-      await bookBtn.click();
-    } else {
-      // Maybe the row itself was clickable and opened a detail view
-      console.log(`   ↳ No separate book button found; row may have triggered booking directly.`);
-    }
-    await randomDelay(200, 400);
-
-    // ── Step 5: Handle 2-Step Confirmation Modal ─────────────────────────
-    console.log(`🪟 [${booking.id}] Waiting for confirmation modal…`);
+    // ── Step A: Select Recorrido (default "Tee 1") ──────────────────────
     try {
-      await page.waitForSelector(S.modalContainer, { timeout: 8000 });
-      console.log(`   ↳ Modal detected.`);
-
-      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-
-      // Tick the legal terms checkbox
-      await page.waitForSelector(S.termsCheckbox, { timeout: 5000 });
-      await page.click(S.termsCheckbox);
+      await page.waitForSelector(S.recorridoSelect, { timeout: 5000 });
+      await page.selectOption(S.recorridoSelect, { label: S.recorridoValue });
       await randomDelay(100, 200);
-      console.log(`   ↳ Terms checkbox ticked.`);
+      console.log(`   ✅ Recorrido: ${S.recorridoValue}`);
+    } catch (e) { console.log(`   ⚠️  Recorrido select skipped: ${e.message}`); }
 
-      // Click final "Confirmar Reserva"
-      await page.waitForSelector(S.confirmBtn, { timeout: 5000 });
-      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
-      await page.click(S.confirmBtn);
-      console.log(`   ↳ Confirm button clicked.`);
+    // ── Step B: Select Hoyos (default "18") ─────────────────────────────
+    try {
+      await page.waitForSelector(S.hoyosSelect, { timeout: 3000 });
+      await page.selectOption(S.hoyosSelect, { label: S.hoyosValue });
+      await randomDelay(100, 200);
+      console.log(`   ✅ Hoyos: ${S.hoyosValue}`);
+    } catch (e) { console.log(`   ⚠️  Hoyos select skipped: ${e.message}`); }
 
-      // Wait for success indication
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
-      await randomDelay(500, 1000);
+    // ── Step C: Select Jugadores (default "1", personal use) ────────────
+    try {
+      await page.waitForSelector(S.jugadoresSelect, { timeout: 3000 });
+      await page.selectOption(S.jugadoresSelect, { label: S.jugadoresValue });
+      await randomDelay(100, 200);
+      console.log(`   ✅ Jugadores: ${S.jugadoresValue}`);
+    } catch (e) { console.log(`   ⚠️  Jugadores select skipped: ${e.message}`); }
 
-      console.log(`🏆 [${booking.id}] Booking confirmed for ${targetDay.label} at ${booking.hora}!`);
+    // ── Step D: Select Hora de Juego ────────────────────────────────────
+    try {
+      await page.waitForSelector(S.horaSelect, { timeout: 5000 });
+      await page.selectOption(S.horaSelect, { label: booking.hora });
+      await randomDelay(100, 200);
+      console.log(`   ✅ Hora de Juego: ${booking.hora}`);
+    } catch (e) {
+      console.log(`   ❌ Failed to select Hora: ${e.message}`);
       return {
-        success: true,
-        message: `Reserva confirmada: ${targetDay.label} ${formatSpanishDate(targetDay.date)} a las ${booking.hora}`,
+        success: false,
+        message: `No se pudo seleccionar la hora ${booking.hora}: ${e.message}`,
         targetDay: targetDay.key,
         date: formatSpanishDate(targetDay.date),
       };
-    } catch (modalError) {
-      // Modal may not have appeared — check if booking was direct
-      console.log(`   ↻ Modal not detected within timeout. Checking page state…`);
-      const pageContent = await page.content();
+    }
 
-      const successTerms = S.successIndicator || ['confirmada', 'reserva realizada', 'gracias'];
-      const pageText = pageContent.toLowerCase();
-      if (successTerms.some(term => pageText.includes(term))) {
-        console.log(`🏆 [${booking.id}] Booking appears successful (confirmed via page content).`);
+    // ── Step E: Handle reCAPTCHA ("No soy un robot") ────────────────────
+    console.log(`   🛡️  Handling reCAPTCHA before Bloquear…`);
+    const formCaptcha = await detectCaptcha(page);
+    if (formCaptcha.type !== 'none') {
+      const solved = await solveCaptcha(page, formCaptcha.type);
+      if (!solved.solved) {
+        console.log(`   ❌ CAPTCHA not solved. Cannot proceed to Bloquear.`);
         return {
-          success: true,
-          message: `Reserva aparentemente confirmada: ${targetDay.label} ${formatSpanishDate(targetDay.date)} a las ${booking.hora}`,
+          success: false,
+          message: `No se pudo resolver el CAPTCHA (${formCaptcha.type}). ${solved.method}`,
           targetDay: targetDay.key,
           date: formatSpanishDate(targetDay.date),
         };
       }
+      await randomDelay(300, 500);
+      console.log(`   ✅ CAPTCHA solved.`);
+    } else {
+      console.log(`   ℹ️  No CAPTCHA detected on form.`);
+    }
 
-      console.log(`❌ [${booking.id}] Could not confirm booking. Modal error: ${modalError.message}`);
+    // ── Step F: Click "Bloquear" ────────────────────────────────────────
+    console.log(`   🔒 Clicking BLOQUEAR…`);
+    try {
+      await page.waitForSelector(S.bloquearBtn, { timeout: 5000 });
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+      await page.click(S.bloquearBtn);
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      await randomDelay(300, 500);
+      console.log(`   ✅ Bloquear clicked. 3-minute confirmation window open.`);
+    } catch (e) {
+      console.log(`   ❌ Bloquear failed: ${e.message}`);
       return {
         success: false,
-        message: `No se pudo confirmar la reserva. Error: ${modalError.message}`,
+        message: `No se pudo hacer clic en Bloquear: ${e.message}`,
         targetDay: targetDay.key,
         date: formatSpanishDate(targetDay.date),
       };
     }
+
+    // ═══════════════════ 3-MIN CONFIRMATION WINDOW ══════════════════════
+    console.log(`   ⏱️  In 3-minute confirmation window. Confirming…`);
+
+    // ── Step G: Select Jugador (self — should be auto-selected) ─────────
+    try {
+      await page.waitForSelector(S.jugadorConfirmSelect, { timeout: 5000 });
+      // Personal user → first option is usually the logged-in user
+      await page.selectOption(S.jugadorConfirmSelect, { index: 0 });
+      await randomDelay(100, 200);
+      console.log(`   ✅ Jugador confirmed (self).`);
+    } catch (e) {
+      console.log(`   ℹ️  Jugador select not found or already set: ${e.message}`);
+    }
+
+    // ── Step H: Check "He leído y aceptado las condiciones" ─────────────
+    console.log(`   📝 Checking condiciones de contratación…`);
+    try {
+      await page.waitForSelector(S.condicionesCheckbox, { timeout: 5000 });
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+      // Use { force: true } in case the checkbox is hidden/styled
+      await page.check(S.condicionesCheckbox, { force: true });
+      await randomDelay(100, 200);
+      console.log(`   ✅ Condiciones checkbox checked.`);
+    } catch (e) {
+      console.log(`   ❌ Condiciones checkbox failed: ${e.message}`);
+      return {
+        success: false,
+        message: `No se pudo marcar la casilla de condiciones: ${e.message}`,
+        targetDay: targetDay.key,
+        date: formatSpanishDate(targetDay.date),
+      };
+    }
+
+    // ── Step I: Click "Reservar" (final confirm) ────────────────────────
+    console.log(`   🏆 Clicking RESERVAR (final confirmation)…`);
+    try {
+      await page.waitForSelector(S.reservarBtn, { timeout: 5000 });
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+      await page.click(S.reservarBtn);
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      await randomDelay(500, 1000);
+    } catch (e) {
+      console.log(`   ❌ Reservar click failed: ${e.message}`);
+      return {
+        success: false,
+        message: `No se pudo confirmar la reserva: ${e.message}`,
+        targetDay: targetDay.key,
+        date: formatSpanishDate(targetDay.date),
+      };
+    }
+
+    // ── Check for success ───────────────────────────────────────────────
+    const pageContent = await page.content();
+    const pageText = pageContent.toLowerCase();
+    const successTerms = S.successIndicator;
+
+    if (successTerms.some(term => pageText.includes(term))) {
+      console.log(`🏆 [${booking.id}] BOOKING CONFIRMED! ${targetDay.label} ${formatSpanishDate(targetDay.date)} at ${booking.hora}`);
+      return {
+        success: true,
+        message: `✅ Reserva confirmada: ${targetDay.label} ${formatSpanishDate(targetDay.date)} a las ${booking.hora}`,
+        targetDay: targetDay.key,
+        date: formatSpanishDate(targetDay.date),
+      };
+    }
+
+    console.log(`⚠️  [${booking.id}] Booking submitted but success unconfirmed. Check manually.`);
+    return {
+      success: true, // Optimistic — Bloquear + Reservar were clicked
+      message: `Reserva enviada (no verificada): ${targetDay.label} ${formatSpanishDate(targetDay.date)} a las ${booking.hora}. Verifique en su cuenta.`,
+      targetDay: targetDay.key,
+      date: formatSpanishDate(targetDay.date),
+    };
   } catch (err) {
     console.error(`💥 [${booking.id}] Fatal automation error: ${err.message}`);
     return {
