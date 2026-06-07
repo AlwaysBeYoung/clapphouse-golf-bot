@@ -18,7 +18,7 @@ services:
     env: node
     region: frankfurt    # Closest to Spain for lowest latency
     plan: free           # Upgrade to 'starter' ($7/mo) for always-on
-    buildCommand: npm install && npx playwright install --with-deps chromium
+    buildCommand: npm install && npx playwright install chromium
     startCommand: node server.js
     healthCheckPath: /api/status
     autoDeploy: yes
