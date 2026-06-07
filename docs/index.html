@@ -453,24 +453,21 @@
         <option value="16:00">16:00 – 16:30</option>
       </select>
 
-      <!-- ── Thursday Dual-Booking Checkboxes ─────────────────────────── -->
-      <div class="checkbox-group" id="thursday-options" style="display: none;">
-        <legend>📅 Hoy es <strong>Jueves</strong> — Puede reservar ambos días del fin de semana:</legend>
-        <div class="checkbox-item">
-          <input type="checkbox" id="chk-sabado" name="target-sabado" checked>
-          <label for="chk-sabado" style="margin: 0; cursor: pointer;">
-            <strong>Sábado</strong> <span id="sabado-date" style="opacity:0.7; font-size:1rem;"></span>
-          </label>
-        </div>
-        <div class="checkbox-item">
-          <input type="checkbox" id="chk-domingo" name="target-domingo">
-          <label for="chk-domingo" style="margin: 0; cursor: pointer;">
-            <strong>Domingo</strong> <span id="domingo-date" style="opacity:0.7; font-size:1rem;"></span>
-          </label>
-        </div>
-        <p style="font-size:1rem; margin-top:0.5rem; color:var(--gold-light); opacity:0.8;">
-          ✅ Si selecciona ambos, el sistema lanzará <strong>dos reservas en paralelo</strong> a las 20:00:00.
+      <!-- ── Date Picker ────────────────────────────────────────────── -->
+      <label for="target-date">📅 Fecha Deseada para Jugar</label>
+      <input
+        type="date"
+        id="target-date"
+        name="target-date"
+        style="font-size:1.35rem; padding:1rem; border-radius:12px; border:3px solid transparent; width:100%; background:var(--white); color:#1a1a1a; font-family:inherit; cursor:pointer;"
+      >
+
+      <!-- Smart booking info -->
+      <div id="booking-preview" style="display:none; margin-top:0.8rem; padding:0.9rem; background:rgba(201,168,76,0.1); border-radius:10px; border:1px solid rgba(201,168,76,0.3);">
+        <p style="font-size:1.1rem; color:var(--gold-light); margin:0 0 0.3rem 0;">
+          🕐 <strong id="preview-open-date"></strong>
         </p>
+        <p style="font-size:1rem; color:var(--soft-gray); margin:0;" id="preview-countdown-hint"></p>
       </div>
     </div>
 
@@ -531,17 +528,17 @@
     const statusText       = $('#status-text');
     const countdownEl      = $('#countdown');
     const bookingIdDisplay = $('#booking-id-display');
-    const thursdayOptions  = $('#thursday-options');
-    const chkSabado        = $('#chk-sabado');
-    const chkDomingo       = $('#chk-domingo');
-    const sabadoDateEl     = $('#sabado-date');
-    const domingoDateEl    = $('#domingo-date');
+    const targetDateInput  = $('#target-date');
+    const bookingPreview   = $('#booking-preview');
+    const previewOpenDate  = $('#preview-open-date');
+    const previewHint      = $('#preview-countdown-hint');
 
     // ─── State ──────────────────────────────────────────────────────────
-    let currentBookingId  = null;
-    let countdownInterval = null;
-    let statusPollInterval = null;
-    let bookingFinalized  = false; // true once we have a terminal result
+    let currentBookingId    = null;
+    let countdownInterval   = null;
+    let statusPollInterval  = null;
+    let bookingFinalized    = false;
+    let currentBookingOpenDate = null; // Date obj for when booking attempt fires
 
     // ─── LocalStorage: Credential Persistence ───────────────────────────
     const STORAGE_KEY = 'golfbot_credentials_v1';
@@ -571,7 +568,7 @@
       }
     }
 
-    // ─── Date Helpers (for Thursday logic in frontend) ─────────────────
+    // ─── Date Helpers ───────────────────────────────────────────────────
 
     function getSpanishDayName(date) {
       const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -585,66 +582,76 @@
       return `${d}/${m}/${y}`;
     }
 
-    function getDPlus(days) {
-      const d = new Date();
-      d.setDate(d.getDate() + days);
-      return d;
-    }
+    /** Given a target date, calculate when the booking opens (D+2 rule + Thu exception) */
+    function getBookingOpenDate(targetDateStr) {
+      const target = new Date(targetDateStr + 'T00:00:00');
+      const targetDay = target.getDay(); // 0=Sun
 
-    // ─── Thursday Detection & UI ────────────────────────────────────────
+      // Regular D+2
+      const regularOpen = new Date(target);
+      regularOpen.setDate(target.getDate() - 2);
 
-    function setupThursdayUI() {
-      const today = new Date();
-      const dayOfWeek = today.getDay(); // 0=Sun, 4=Thu
-
-      if (dayOfWeek === 4) {
-        // Thursday! Show dual-day checkboxes
-        const sabado = getDPlus(2);
-        const domingo = getDPlus(3);
-
-        sabadoDateEl.textContent = `(${getSpanishDayName(sabado)} ${formatDateSpanish(sabado)})`;
-        domingoDateEl.textContent = `(${getSpanishDayName(domingo)} ${formatDateSpanish(domingo)})`;
-        thursdayOptions.style.display = 'block';
-      } else {
-        thursdayOptions.style.display = 'none';
-      }
-    }
-
-    // ─── Target Days Resolver ───────────────────────────────────────────
-
-    function getTargetDays() {
-      const today = new Date();
-      const dayOfWeek = today.getDay();
-
-      if (dayOfWeek === 4) {
-        // Thursday: user can choose Sat, Sun, or both
-        const days = [];
-        if (chkSabado.checked) days.push('sabado');
-        if (chkDomingo.checked) days.push('domingo');
-        return days;
+      // Thursday exception: Sunday opens on the previous Thursday (earlier!)
+      if (targetDay === 0) {
+        const thursdayOpen = new Date(target);
+        thursdayOpen.setDate(target.getDate() - 3); // Sunday - 3 = Thursday
+        thursdayOpen.setHours(20, 0, 0, 0);
+        return {
+          openDate: thursdayOpen,
+          message: `Jueves ${formatDateSpanish(thursdayOpen)} a las 20:00 (excepción fin de semana)`
+        };
       }
 
-      // Normal days: always D+2 (which resolves to the correct day label)
-      const d2 = getDPlus(2);
-      const d2Day = d2.getDay();
-      // Map day-of-week to our key
-      const dayMap = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
-      return [dayMap[d2Day]];
+      regularOpen.setHours(20, 0, 50, 0);
+      return {
+        openDate: regularOpen,
+        message: `${getSpanishDayName(regularOpen)} ${formatDateSpanish(regularOpen)} a las 20:00`
+      };
+    }
+
+    // ─── Date Picker: Setup & Preview ───────────────────────────────────
+
+    function setupDatePicker() {
+      // Set min date = D+2 (earliest possible booking)
+      const today = new Date();
+      const minDate = new Date(today);
+      minDate.setDate(today.getDate() + 2);
+      targetDateInput.min = minDate.toISOString().split('T')[0];
+
+      // On change: show preview of when booking will fire
+      targetDateInput.addEventListener('change', updateBookingPreview);
+    }
+
+    function updateBookingPreview() {
+      const val = targetDateInput.value;
+      if (!val) {
+        bookingPreview.style.display = 'none';
+        currentBookingOpenDate = null;
+        return;
+      }
+
+      const info = getBookingOpenDate(val);
+      currentBookingOpenDate = info.openDate;
+      bookingPreview.style.display = 'block';
+      previewOpenDate.textContent = '⏰ El sistema intentará reservar el ' + info.message;
+      previewHint.textContent = 'La cuenta atrás se iniciará al guardar la reserva.';
     }
 
     // ─── Countdown Timer ────────────────────────────────────────────────
 
     function updateCountdown() {
-      const now = new Date();
-      const target = new Date(now);
-      target.setHours(20, 0, 0, 0);
-
-      if (now >= target) {
-        // Past 20:00 today — countdown to tomorrow 20:00
-        target.setDate(target.getDate() + 1);
+      if (!currentBookingOpenDate) {
+        countdownEl.textContent = '--:--:--';
+        return;
       }
 
-      const diff = Math.max(0, target - now);
+      const now = new Date();
+      const diff = Math.max(0, currentBookingOpenDate.getTime() - now.getTime());
+
+      if (diff === 0) {
+        countdownEl.textContent = '00:00:00';
+        return;
+      }
 
       const totalSec = Math.floor(diff / 1000);
       const hours    = Math.floor(totalSec / 3600);
@@ -768,19 +775,29 @@
 
     btnSubmit.addEventListener('click', async function () {
       // ── Validate ────────────────────────────────────────────────────
-      const username = usernameInput.value.trim();
-      const password = passwordInput.value; // don't trim — spaces may be part of pw
-      const hoyos     = hoyosSelect.value;
-      const jugadores = jugadoresSelect.value;
-      const hora      = horaSelect.value;
-      const targetDays = getTargetDays();
+      const username   = usernameInput.value.trim();
+      const password   = passwordInput.value;
+      const hoyos      = hoyosSelect.value;
+      const jugadores  = jugadoresSelect.value;
+      const hora       = horaSelect.value;
+      const targetDate = targetDateInput.value;
 
       const errors = [];
 
-      if (!username) errors.push('Por favor, introduzca su Usuario (email).');
-      if (!password) errors.push('Por favor, introduzca su Contraseña.');
-      if (targetDays.length === 0) {
-        errors.push('Debe seleccionar al menos un día (Sábado o Domingo).');
+      if (!username)   errors.push('Por favor, introduzca su Usuario (email).');
+      if (!password)   errors.push('Por favor, introduzca su Contraseña.');
+      if (!targetDate) errors.push('Por favor, seleccione una fecha deseada para jugar.');
+
+      // Validate date is at least D+2
+      if (targetDate) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const minDate = new Date(today);
+        minDate.setDate(today.getDate() + 2);
+        const chosen = new Date(targetDate + 'T00:00:00');
+        if (chosen < minDate) {
+          errors.push('La fecha debe ser al menos D+2 (pasado mañana). Las reservas para fechas anteriores ya se abrieron.');
+        }
       }
 
       if (errors.length > 0) {
@@ -812,7 +829,7 @@
             hoyos,
             jugadores,
             hora,
-            targetDays,
+            targetDate,
           }),
         });
 
@@ -829,9 +846,14 @@
         currentBookingId = data.booking.id;
         bookingIdDisplay.textContent = 'ID de Reserva: ' + currentBookingId;
 
+        const openMsg = data.booking.opensMessage || ('Se abrirá el ' + data.booking.opensOn + ' a las 20:00');
         statusText.textContent =
-          '✅ Estado: Guardado con éxito. ' +
-          'Esperando en la cola para el lanzamiento automático de las 20:00.';
+          '✅ Estado: Guardado con éxito. ' + openMsg + '.';
+
+        // Set countdown to the correct booking open time
+        if (data.booking.strikeTime) {
+          currentBookingOpenDate = new Date(data.booking.strikeTime);
+        }
 
         statusSection.classList.add('visible');
         spinner.classList.remove('visible');
@@ -862,7 +884,7 @@
     // ─── Init ──────────────────────────────────────────────────────────
     function init() {
       autoFillCredentials();
-      setupThursdayUI();
+      setupDatePicker();
     }
 
     // Run on DOM ready
@@ -875,7 +897,7 @@
     // ─── Expose for debugging ──────────────────────────────────────────
     window.GolfBot = {
       BACKEND_URL,
-      getTargetDays,
+      getBookingOpenDate,
       loadCredentials,
       saveCredentials,
       getBookingId: () => currentBookingId,

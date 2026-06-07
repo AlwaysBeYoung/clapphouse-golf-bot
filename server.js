@@ -197,7 +197,10 @@ let scheduledTimers = [];
  * @property {string} hoyos         - "9" or "18"
  * @property {string} jugadores     - "1" to "4"
  * @property {string} hora          - Desired tee time e.g. "08:00"
- * @property {string[]} targetDays  - e.g. ["sabado"] or ["sabado", "domingo"]
+ * @property {string} targetDate    - Target golf date (YYYY-MM-DD)
+ * @property {string[]} targetDays  - e.g. ["sabado"] or ["sabado", "domingo"] (legacy)
+ * @property {string} bookingOpensOn - Human-readable when the booking opens
+ * @property {Date} bookingOpenDate  - The Date object for when booking opens at 20:00
  * @property {'pending'|'in_progress'|'success'|'failed'|'partial'} status
  * @property {object|null} result   - Outcome details
  * @property {Date} createdAt
@@ -272,6 +275,87 @@ function getTodayDayOfWeek() {
 /** Check if today is Thursday (day 4) */
 function isTodayThursday() {
   return getTodayDayOfWeek() === 4;
+}
+
+/**
+ * Calculate when a target golf date opens for booking.
+ *
+ * D+2 rule:  every night at 20:00, bookings open for today+2.
+ * Thursday exception: on Thursday at 20:00, BOTH Saturday (D+2) AND Sunday (D+3) open.
+ *
+ * Examples:
+ *   target Jun 10 (Tue) → opens Jun  8 (Sun) at 20:00   [regular D+2]
+ *   target Jun 14 (Sat) → opens Jun 12 (Thu) at 20:00   [regular D+2]
+ *   target Jun 15 (Sun) → opens Jun 12 (Thu) at 20:00   [Thursday exception — earlier!]
+ *
+ * @param {string} targetDateStr - "YYYY-MM-DD"
+ * @returns {{ openDate: Date, targetDate: Date, isThursdayException: boolean, message: string }}
+ */
+function getBookingOpenInfo(targetDateStr) {
+  const target = new Date(targetDateStr + 'T00:00:00');
+  const targetDay = target.getDay(); // 0=Sun … 6=Sat
+
+  // Regular D+2: open_date = target - 2
+  const regularOpen = new Date(target);
+  regularOpen.setDate(target.getDate() - 2);
+
+  // Thursday exception: if target is Sunday (day 0), it opens on the PREVIOUS Thursday
+  //   Sunday - 3 = Thursday (which is earlier than the regular Friday open)
+  //   Use Thursday as the booking open date.
+  if (targetDay === 0) {
+    const thursdayOpen = new Date(target);
+    thursdayOpen.setDate(target.getDate() - 3); // Sunday - 3 = Thursday
+    return {
+      openDate: thursdayOpen,
+      targetDate: target,
+      isThursdayException: true,
+      message: `Se abre el jueves ${formatSpanishDate(thursdayOpen)} a las 20:00 (excepción fin de semana)`,
+    };
+  }
+
+  return {
+    openDate: regularOpen,
+    targetDate: target,
+    isThursdayException: false,
+    message: `Se abre el ${getSpanishDayName(regularOpen)} ${formatSpanishDate(regularOpen)} a las 20:00 (regla D+2)`,
+  };
+}
+
+/**
+ * Get which target dates open TONIGHT at 20:00.
+ * Used by the nightly automation to decide which bookings to execute.
+ * @returns {Array<{key: string, date: Date, label: string, dateStr: string}>}
+ */
+function getTonightOpeningDates() {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+
+  // D+2 from today
+  const d2 = new Date(today);
+  d2.setDate(today.getDate() + 2);
+
+  const openings = [
+    {
+      key: getSpanishDayName(d2).toLowerCase(),
+      date: new Date(d2),
+      label: getSpanishDayName(d2),
+      dateStr: d2.toISOString().split('T')[0],
+    },
+  ];
+
+  // Thursday: D+3 (Sunday) also opens tonight
+  if (dayOfWeek === 4) {
+    const d3 = new Date(today);
+    d3.setDate(today.getDate() + 3);
+    openings.push({
+      key: 'domingo',
+      date: new Date(d3),
+      label: getSpanishDayName(d3),
+      dateStr: d3.toISOString().split('T')[0],
+    });
+  }
+
+  return openings;
 }
 
 // ─── Data Sanitization ──────────────────────────────────────────────────────
@@ -762,23 +846,26 @@ async function runAllBookings() {
   automationInProgress = true;
   console.log(`🚀 [STRIKE] Launching automation for ${bookingStore.size} booking(s) at ${new Date().toISOString()}…`);
 
-  // Build task list: each booking × each target day = one automation task
+  // ── Match bookings to tonight's opening dates ────────────────────
+  const tonightOpenings = getTonightOpeningDates();
+  const tonightDateStrs = tonightOpenings.map(o => o.dateStr);
+  console.log(`📅 Tonight opens: ${tonightOpenings.map(o => `${o.label} (${o.dateStr})`).join(', ')}`);
+
   const tasks = [];
 
   for (const [, booking] of bookingStore) {
-    booking.status = 'in_progress';
-
-    const availableTargets = getTargetDates(); // [{key:'sabado',date,...}, {key:'domingo',date,...} if Thu]
-
-    for (const target of availableTargets) {
-      if (booking.targetDays.includes(target.key)) {
-        tasks.push({
-          booking,
-          targetDay: target,
-          taskPromise: null,
-        });
-      }
+    if (tonightDateStrs.includes(booking.targetDate)) {
+      booking.status = 'in_progress';
+      const match = tonightOpenings.find(o => o.dateStr === booking.targetDate);
+      tasks.push({ booking, targetDay: match });
+      console.log(`   🎯 Matched: ${booking.id} → ${match.label} (${match.dateStr})`);
     }
+  }
+
+  if (tasks.length === 0) {
+    console.log('ℹ️  No bookings match tonight\'s opening dates. Nothing to do.');
+    automationInProgress = false;
+    return;
   }
 
   console.log(`📋 [STRIKE] Total automation tasks to run: ${tasks.length}`);
@@ -933,48 +1020,45 @@ app.use(express.static(path.join(__dirname, 'docs')));
 /**
  * POST /api/booking
  * Submit a new booking request (credentials + preferences).
- * Body: { username, password, hoyos, jugadores, hora, targetDays }
+ * Body: { username, password, hoyos, jugadores, hora, targetDate }
  */
 app.post('/api/booking', (req, res) => {
   try {
-    const { username, password, hoyos, jugadores, hora, targetDays } = req.body;
+    const { username, password, hoyos, jugadores, hora, targetDate } = req.body;
 
     // Validation
     const errors = [];
     if (!username || !username.trim()) errors.push('Usuario es obligatorio');
     if (!password || !password.trim()) errors.push('Contraseña es obligatoria');
     if (!hora) errors.push('Hora deseada es obligatoria');
-    if (!targetDays || !Array.isArray(targetDays) || targetDays.length === 0) {
-      errors.push('Debe seleccionar al menos un día objetivo');
+    if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      errors.push('Fecha objetivo es obligatoria (formato YYYY-MM-DD)');
     }
 
     if (errors.length > 0) {
       return res.status(400).json({ success: false, errors });
     }
 
-    // Check if we're past today's strike time but before cleanup
+    // ── Calculate when this target date opens for booking ──────────
+    const openInfo = getBookingOpenInfo(targetDate);
     const now = new Date();
-    const strikeToday = new Date(now);
-    strikeToday.setHours(CONFIG.strikeTime.hour, CONFIG.strikeTime.minute, CONFIG.strikeTime.second, CONFIG.strikeTime.millis);
-    const cleanupToday = new Date(now);
-    cleanupToday.setHours(CONFIG.cleanupTime.hour, CONFIG.cleanupTime.minute, CONFIG.cleanupTime.second, CONFIG.cleanupTime.millis);
 
-    let nextStrikeLabel;
-    if (now > strikeToday && now < cleanupToday) {
-      // Currently in the middle of automation — book for tomorrow
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(CONFIG.strikeTime.hour, CONFIG.strikeTime.minute, 0, 0);
-      nextStrikeLabel = tomorrow.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
-    } else if (now >= cleanupToday) {
-      // Past cleanup — schedule for tomorrow
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(CONFIG.strikeTime.hour, CONFIG.strikeTime.minute, 0, 0);
-      nextStrikeLabel = tomorrow.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
-    } else {
-      // Before today's strike
-      nextStrikeLabel = strikeToday.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
+    // Check if the booking window has already passed
+    if (openInfo.openDate < now) {
+      // Check if it opened today (before 20:00 means still possible tonight)
+      const openDateStart = new Date(openInfo.openDate);
+      openDateStart.setHours(0, 0, 0, 0);
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+
+      if (openDateStart.getTime() === todayStart.getTime() && now.getHours() < 20) {
+        // Booking opens tonight — still valid
+      } else {
+        return res.status(400).json({
+          success: false,
+          errors: [`La ventana de reserva para el ${formatSpanishDate(openInfo.targetDate)} ya ha pasado (se abrió el ${formatSpanishDate(openInfo.openDate)} a las 20:00). Por favor, seleccione una fecha más lejana.`],
+        });
+      }
     }
 
     const booking = {
@@ -984,7 +1068,10 @@ app.post('/api/booking', (req, res) => {
       hoyos: hoyos || '18',
       jugadores: jugadores || '4',
       hora: hora,
-      targetDays: targetDays,
+      targetDate: targetDate,
+      targetDays: [], // deprecated, kept for compat
+      bookingOpensOn: openInfo.message,
+      bookingOpenDate: openInfo.openDate,
       status: 'pending',
       result: null,
       createdAt: new Date(),
@@ -992,25 +1079,36 @@ app.post('/api/booking', (req, res) => {
 
     bookingStore.set(booking.id, booking);
 
+    // Format the strike time for display
+    const strikeTime = new Date(openInfo.openDate);
+    strikeTime.setHours(CONFIG.strikeTime.hour, CONFIG.strikeTime.minute, CONFIG.strikeTime.second, CONFIG.strikeTime.millis);
+
     console.log(`📥 [BOOKING] New request received:`);
-    console.log(`   ID:       ${booking.id}`);
-    console.log(`   User:     ${booking.username}`);
-    console.log(`   Hora:     ${booking.hora}`);
-    console.log(`   Hoyos:    ${booking.hoyos}`);
-    console.log(`   Players:  ${booking.jugadores}`);
-    console.log(`   Days:     ${booking.targetDays.join(', ')}`);
-    console.log(`   Queue:    ${bookingStore.size} booking(s) pending`);
+    console.log(`   ID:          ${booking.id}`);
+    console.log(`   User:        ${booking.username}`);
+    console.log(`   Target date: ${targetDate} (${getSpanishDayName(openInfo.targetDate)})`);
+    console.log(`   Opens on:    ${formatSpanishDate(openInfo.openDate)} at 20:00`);
+    console.log(`   Hora:        ${booking.hora}`);
+    console.log(`   Hoyos:       ${booking.hoyos}`);
+    console.log(`   Players:     ${booking.jugadores}`);
+    console.log(`   Queue:       ${bookingStore.size} booking(s) pending`);
 
     return res.status(201).json({
       success: true,
       booking: {
         id: booking.id,
         status: booking.status,
+        targetDate: targetDate,
+        targetDayLabel: getSpanishDayName(openInfo.targetDate),
+        opensOn: formatSpanishDate(openInfo.openDate),
+        opensOnLabel: getSpanishDayName(openInfo.openDate),
+        opensMessage: openInfo.message,
+        strikeTime: strikeTime.toISOString(),
         createdAt: booking.createdAt,
         // NEVER return credentials in response
       },
-      message: `Reserva guardada. El sistema intentará reservar automáticamente a las ${nextStrikeLabel}.`,
-      nextAutomation: nextStrikeLabel,
+      message: `Reserva guardada. ${openInfo.message}.`,
+      nextAutomation: strikeTime.toISOString(),
     });
   } catch (err) {
     console.error('❌ [API] Error in POST /api/booking:', err);
