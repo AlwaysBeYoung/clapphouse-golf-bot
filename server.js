@@ -401,77 +401,99 @@ async function solveCaptcha(page, captchaType) {
       }
     }
 
-    // ── Google reCAPTCHA: solve via 2captcha ──────────────────────────
+    // ── Google reCAPTCHA v2: click checkbox → try pass → fallback 2captcha ──
     case 'recaptcha': {
-      const apiKey = CONFIG.twoCaptchaApiKey;
-      if (!apiKey) {
-        console.log(`   ⚠️  reCAPTCHA detected but no 2captcha API key configured.`);
-        console.log(`   → Set CAPTCHA_API_KEY env var on Render to enable auto-solving.`);
-        return { solved: false, method: 'no-api-key' };
+      console.log(`   🤖 Attempting reCAPTCHA v2 checkbox click…`);
+
+      // ── Strategy 1: Click the checkbox directly (often just passes) ────
+      try {
+        // Locate the reCAPTCHA iframe and click the checkbox inside it
+        const recaptchaFrame = page.frameLocator('iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"]').first();
+        const checkbox = recaptchaFrame.locator('.recaptcha-checkbox-border, #recaptcha-anchor, .recaptcha-checkbox');
+        await checkbox.waitFor({ state: 'visible', timeout: 5000 });
+        await randomDelay(200, 400);
+        await checkbox.click();
+        console.log(`   ↳ Checkbox clicked. Waiting for Google to evaluate…`);
+        await randomDelay(2000, 3500); // Google takes 2-5 seconds to decide
+
+        // Check if it passed (green checkmark appeared)
+        const checked = await recaptchaFrame.locator('.recaptcha-checkbox-checked, [aria-checked="true"]').count();
+        if (checked > 0) {
+          console.log(`   ✅ reCAPTCHA passed! Green checkmark confirmed.`);
+          await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+          return { solved: true, method: 'direct-click-passed' };
+        }
+
+        // Check if an image challenge appeared
+        const challengeVisible = await recaptchaFrame.locator('.rc-imageselect, #rc-imageselect, .recaptcha-challenge').count();
+        if (challengeVisible > 0) {
+          console.log(`   ⚠️  reCAPTCHA image challenge appeared. Direct click not enough.`);
+        } else {
+          console.log(`   ⚠️  reCAPTCHA state unclear after click. Proceeding to fallback.`);
+        }
+      } catch (clickErr) {
+        console.log(`   ⚠️  Could not click reCAPTCHA checkbox: ${clickErr.message}`);
       }
 
-      console.log(`   🤖 Solving reCAPTCHA via 2captcha (this takes 15-45 seconds)…`);
+      // ── Strategy 2: Fallback to 2captcha for image challenge ──────────
+      const apiKey = CONFIG.twoCaptchaApiKey;
+      if (!apiKey) {
+        console.log(`   ❌ Image challenge requires 2captcha but no CAPTCHA_API_KEY configured.`);
+        console.log(`   → Set env var CAPTCHA_API_KEY on Render (get key at 2captcha.com).`);
+        return { solved: false, method: 'image-challenge-no-api-key' };
+      }
+
+      console.log(`   🤖 Solving image challenge via 2captcha (15-45 seconds)…`);
       try {
         const siteKey = CONFIG.recaptchaSiteKey;
         const pageUrl = page.url();
 
-        // Step 1: Submit CAPTCHA to 2captcha
+        // Submit to 2captcha
         const submitResp = await fetch(
           `https://2captcha.com/in.php?key=${apiKey}&method=userrecaptcha&googlekey=${siteKey}&pageurl=${encodeURIComponent(pageUrl)}&json=1`
         );
         const submitData = await submitResp.json();
         if (submitData.status !== 1) {
           console.log(`   ❌ 2captcha submission failed: ${submitData.request}`);
-          return { solved: false, method: `2captcha-submit-failed:${submitData.request}` };
+          return { solved: false, method: `2captcha-submit-failed` };
         }
         const captchaId = submitData.request;
-        console.log(`   ↳ CAPTCHA submitted (ID: ${captchaId}). Polling for solution…`);
+        console.log(`   ↳ Submitted (ID: ${captchaId}). Polling…`);
 
-        // Step 2: Poll for solution (up to 120 seconds)
+        // Poll for solution (up to 120 seconds)
         for (let i = 0; i < 24; i++) {
-          await new Promise(r => setTimeout(r, 5000)); // Wait 5s between polls
+          await new Promise(r => setTimeout(r, 5000));
           const resultResp = await fetch(
             `https://2captcha.com/res.php?key=${apiKey}&action=get&id=${captchaId}&json=1`
           );
           const resultData = await resultResp.json();
           if (resultData.status === 1) {
             const token = resultData.request;
-            console.log(`   ✅ 2captcha solved! Injecting token…`);
-
-            // Step 3: Inject the solution token into the page
+            console.log(`   ✅ 2captcha solved. Injecting token…`);
             await page.evaluate((gToken) => {
-              const textarea = document.querySelector('#g-recaptcha-response');
-              if (textarea) {
-                (textarea).style.display = 'block';
-                (textarea).value = gToken;
-              }
-              // Also try the callback approach
+              const ta = document.querySelector('#g-recaptcha-response');
+              if (ta) { ta.style.display = 'block'; ta.value = gToken; }
               if (typeof window.___grecaptcha_cfg !== 'undefined') {
-                const cfg = window.___grecaptcha_cfg;
-                const clients = cfg.clients || {};
-                for (const clientId of Object.keys(clients)) {
-                  const client = clients[clientId];
-                  const callbackKey = Object.keys(client).find(k => k.startsWith('callback'));
-                  if (callbackKey && typeof client[callbackKey] === 'function') {
-                    client[callbackKey](gToken);
-                  }
+                const clients = (window.___grecaptcha_cfg).clients || {};
+                for (const cId of Object.keys(clients)) {
+                  const c = clients[cId];
+                  const cb = Object.keys(c).find(k => k.startsWith('callback'));
+                  if (cb && typeof c[cb] === 'function') c[cb](gToken);
                 }
               }
             }, token);
-
             await randomDelay(500, 1000);
             return { solved: true, method: '2captcha' };
           }
           if (resultData.request === 'ERROR_CAPTCHA_UNSOLVABLE') {
-            console.log(`   ❌ 2captcha reported CAPTCHA as unsolvable.`);
             return { solved: false, method: '2captcha-unsolvable' };
           }
         }
-        console.log(`   ❌ 2captcha timed out (120s).`);
+        console.log(`   ❌ 2captcha timed out.`);
         return { solved: false, method: '2captcha-timeout' };
       } catch (err) {
         console.log(`   ❌ 2captcha error: ${err.message}`);
-        return { solved: false, method: `2captcha-error:${err.message}` };
+        return { solved: false, method: `2captcha-error` };
       }
     }
 
