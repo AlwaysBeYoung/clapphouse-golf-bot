@@ -1,6 +1,6 @@
-# ⛳ Golf Bot — Automated Tee-Time Booking for Spanish Seniors
+# ⛳ Golf Bot — Lomas Bosque Auto-Booker (Madrid)
 
-> **Zero-effort, millisecond-precision Clapphouse/GolfSpain auto-booker.**
+> **Real Club de Golf Lomas Bosque** — Zero-effort, millisecond-precision TeeOne.golf auto-booker.
 > Dark emerald UI for 70+ year-old players. Server-side Playwright engine fires precisely at 20:00:00.050 every evening.
 > **100% RAM-only credential storage — nothing persists to disk. GDPR-respectful by design.**
 

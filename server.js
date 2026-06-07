@@ -1,9 +1,16 @@
 /**
  * ╔══════════════════════════════════════════════════════════════╗
- * ║           GOLF BOT — Clapphouse/GolfSpain Auto-Booker       ║
- * ║  Millisecond-Precision Tee-Time Reservation Engine          ║
- * ║  Designed for Spanish Senior Golfers (70+ years old)        ║
+ * ║   GOLF BOT — TeeOne.golf Auto-Booker for                   ║
+ * ║   Real Club de Golf Lomas Bosque (Madrid, Spain)           ║
+ * ║   Millisecond-Precision Tee-Time Reservation Engine         ║
+ * ║   Designed for Spanish Senior Golfers (70+ years old)      ║
  * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * Target Course:  Real Club de Golf Lomas Bosque
+ * Platform:       TeeOne.golf (Club ID: 99)
+ * Login URL:      https://members.teeone.golf/lomas/
+ * Calendar URL:   https://members.teeone.golf/lomas/calendario
+ * API Base:       https://api.teeone.golf/InternalMembersEngine/v1
  *
  * Architecture:
  *   - Express API server (stateless, zero database)
@@ -47,28 +54,107 @@ const CONFIG = {
   minHumanDelay: 100,
   maxHumanDelay: 300,
 
-  // ⚠️ IMPORTANT — ADJUST THESE SELECTORS TO MATCH THE CLAPPHOUSE WEBSITE ⚠️
-  // Inspect the live Clapphouse/GolfSpain pages and update accordingly.
+  // ── TeeOne.golf Selectors ──────────────────────────────────────────────
+  // ✅ Login selectors VERIFIED from actual TeeOne HTML (2026-06-07)
+  // ⚠️  Calendar/booking selectors are best-guess based on platform patterns.
+  //     Verify by logging in and inspecting the calendar page in DevTools.
   selectors: {
-    // ── Login Page ──────────────────────────────────────────────────────
-    loginUrl:        'https://clapphouse.golfspain.com/login',
-    usernameField:   'input[name="email"], input[name="username"], #user_email, #email',
-    passwordField:   'input[name="password"], input[type="password"], #user_password, #password',
-    loginSubmitBtn:  'button[type="submit"], input[type="submit"], .login-button, #login-btn',
+    // ── Login Page (VERIFIED — exact IDs from TeeOne source) ────────────
+    loginUrl:        'https://members.teeone.golf/lomas/?returnUrl=/lomas/calendario',
+    usernameField:   '#txtUsuarioLogin',          // <input id="txtUsuarioLogin">
+    passwordField:   '#txtPasswordLogin',          // <input id="txtPasswordLogin">
+    loginSubmitBtn:  '#btnLoginUsuario',           // <button id="btnLoginUsuario">
 
-    // ── Tee Sheet ───────────────────────────────────────────────────────
-    teeSheetUrl:     'https://clapphouse.golfspain.com/tee-sheet',
-    // Slot row: use a data attribute or class that contains the tee time.
-    // The placeholder below assumes slots have a data-tee-time attribute like "08:00".
-    // Replace with the actual selector pattern found on the live site.
-    teeTimeRow:      (time) => `[data-tee-time="${time}"], tr:has(td:has-text("${time}")), .slot-${time.replace(':', '')}`,
-    // Button inside the slot row to initiate booking
-    bookSlotBtn:     'button.reserve, .book-now, a.reserve-link, .slot-action button',
+    // ── Calendar / Tee Sheet ────────────────────────────────────────────
+    clubId:           '99',                        // <input id="HidIdClub" value="99">
+    calendarUrl:      'https://members.teeone.golf/lomas/calendario',
+    apiBaseUrl:       'https://api.teeone.golf/InternalMembersEngine/v1',
 
-    // ── Confirmation Modal (2-Step Validation) ──────────────────────────
-    modalContainer:  '.modal, .dialog, [role="dialog"], #booking-modal, .confirmation-popup',
-    termsCheckbox:   'input[type="checkbox"][name*="terms"], #accept-terms, .terms-checkbox input',
-    confirmBtn:      'button:has-text("Confirmar"), #confirm-booking, .confirm-btn, button.confirm',
+    // Date cell in the calendar grid — TeeOne uses a jQuery datepicker.
+    // The calendar likely renders <td> cells with data-fecha attributes.
+    // Adjust based on: right-click → Inspect on a clickable date in the calendar.
+    dateCell: (dateStr) => [
+      `[data-fecha="${dateStr}"]`,
+      `td[data-date="${dateStr}"]`,
+      `.fc-day[data-date="${dateStr}"]`,
+      `td:has(.dia:contains("${dateStr.split('-')[2]}"))`,
+    ].join(', '),
+
+    // Tee time slot row — each available time in the tee sheet grid.
+    // TeeOne typically uses a table with rows per time slot.
+    teeTimeRow: (time) => [
+      `[data-hora="${time}"]`,
+      `tr[data-tee-time="${time}"]`,
+      `.slot[data-time="${time}"]`,
+      `tr:has(td:has-text("${time}"))`,
+    ].join(', '),
+
+    // Button/link to book the selected slot
+    bookSlotBtn: [
+      'button.reservar',
+      '.btn-reservar',
+      'a.btn-reserva',
+      'button:has-text("Reservar")',
+      'button:has-text("Seleccionar")',
+      '.slot-action button',
+      '.slot-action .btn',
+      'td.accion button',
+    ].join(', '),
+
+    // ── Booking Form / Modal ────────────────────────────────────────────
+    // After selecting a slot, TeeOne shows a booking form (modal or inline).
+    modalContainer: [
+      '.modal',
+      '.modal-dialog',
+      '[role="dialog"]',
+      '#modalReserva',
+      '.booking-modal',
+      '.panel-reserva',
+      'form.reserva',
+    ].join(', '),
+
+    // Player count dropdown (number of jugadores)
+    playersSelect: [
+      'select[name*="jugador"]',
+      'select[name*="Jugador"]',
+      '#numJugadores',
+      'select.jugadores',
+      'select:has(option:has-text("Jugador"))',
+    ].join(', '),
+
+    // Terms & conditions checkbox
+    termsCheckbox: [
+      'input[type="checkbox"][name*="termino"]',
+      'input[type="checkbox"][name*="condicion"]',
+      'input[type="checkbox"][name*="acepto"]',
+      '#aceptarTerminos',
+      '#chkTerminos',
+      '.condiciones input[type="checkbox"]',
+      '.terminos input[type="checkbox"]',
+    ].join(', '),
+
+    // Final confirm booking button
+    confirmBtn: [
+      'button:has-text("Confirmar")',
+      'button:has-text("Reservar")',
+      'button:has-text("Aceptar")',
+      '#btnConfirmar',
+      '#btnConfirmarReserva',
+      '.btn-confirmar-reserva',
+      'button.confirmar',
+      'input[type="submit"][value*="Confirmar"]',
+      'input[type="submit"][value*="Reservar"]',
+    ].join(', '),
+
+    // Success indicator text on the page after booking
+    successIndicator: [
+      'confirmada',
+      'reserva confirmada',
+      'reserva realizada',
+      'gracias por su reserva',
+      'booking confirmed',
+      'su reserva',
+    ],
   },
 
   // Desired tee-time slots the user can pick from
@@ -97,8 +183,8 @@ let scheduledTimers = [];
 /**
  * @typedef {Object} BookingRequest
  * @property {string} id            - UUID
- * @property {string} username      - Clapphouse username
- * @property {string} password      - Clapphouse password (volatile RAM only)
+ * @property {string} username      - TeeOne/Lomas Bosque username
+ * @property {string} password      - TeeOne/Lomas Bosque password (volatile RAM only)
  * @property {string} hoyos         - "9" or "18"
  * @property {string} jugadores     - "1" to "4"
  * @property {string} hora          - Desired tee time e.g. "08:00"
@@ -269,14 +355,28 @@ async function executeSingleBooking(booking, targetDay) {
 
     console.log(`✅ [${booking.id}] Login completed. Session is hot.`);
 
-    // ── Step 2: Navigate to Tee Sheet ───────────────────────────────────
-    // Build the tee-sheet URL with the target date
+    // ── Step 2: Navigate to Calendar ──────────────────────────────────
     const dateStr = targetDay.date.toISOString().split('T')[0]; // YYYY-MM-DD
-    const teeSheetUrl = `${S.teeSheetUrl}?date=${dateStr}`;
+    const dayNum = String(targetDay.date.getDate()).padStart(2, '0');
 
-    console.log(`🗺️  [${booking.id}] Navigating to tee sheet for ${targetDay.label} (${dateStr})…`);
-    await page.goto(teeSheetUrl, { waitUntil: 'networkidle', timeout: 30000 });
+    console.log(`🗓️  [${booking.id}] Navigating to calendar for ${targetDay.label} (${dateStr})…`);
+    await page.goto(S.calendarUrl, { waitUntil: 'networkidle', timeout: 30000 });
     await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+
+    // ── Step 2b: Click the target date on the calendar ─────────────────
+    // TeeOne shows a calendar grid; you must click the specific date first
+    console.log(`   ↳ Clicking date: ${dateStr} (day ${dayNum})…`);
+    try {
+      const dateSelector = S.dateCell(dateStr);
+      await page.waitForSelector(dateSelector, { timeout: 5000 });
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+      await page.click(dateSelector);
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      await randomDelay(200, 400);
+      console.log(`   ↳ Date selected. Tee sheet should now be visible.`);
+    } catch (dateErr) {
+      console.log(`   ↳ Could not click date directly (${dateErr.message}). The calendar may auto-show D+2 dates. Continuing…`);
+    }
 
     // ── Step 3: Wait for the exact strike moment ─────────────────────────
     const now = new Date();
@@ -348,7 +448,9 @@ async function executeSingleBooking(booking, targetDay) {
       console.log(`   ↻ Modal not detected within timeout. Checking page state…`);
       const pageContent = await page.content();
 
-      if (pageContent.toLowerCase().includes('confirmada') || pageContent.toLowerCase().includes('reserva')) {
+      const successTerms = S.successIndicator || ['confirmada', 'reserva realizada', 'gracias'];
+      const pageText = pageContent.toLowerCase();
+      if (successTerms.some(term => pageText.includes(term))) {
         console.log(`🏆 [${booking.id}] Booking appears successful (confirmed via page content).`);
         return {
           success: true,
@@ -770,7 +872,9 @@ process.on('SIGINT', () => {
 app.listen(CONFIG.port, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║        ⛳  GOLF BOT — Auto-Booker Engine  ⛳         ║');
+  console.log('║  ⛳  GOLF BOT — Lomas Bosque Auto-Booker  ⛳        ║');
+  console.log('║     Real Club de Golf Lomas Bosque (Madrid)         ║');
+  console.log('║     Platform: TeeOne.golf  |  Club ID: 99          ║');
   console.log('╠══════════════════════════════════════════════════════╣');
   console.log(`║  Server:   http://localhost:${CONFIG.port}                     ║`);
   console.log(`║  Timezone: ${CONFIG.timezone}                          ║`);
