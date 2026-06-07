@@ -12,7 +12,7 @@
 ┌──────────────────────────┐       POST /api/booking        ┌──────────────────────────────┐
 │   GitHub Pages (Static)  │  ──────────────────────────▶   │   Render / Railway (Node.js) │
 │                          │                                 │                              │
-│   public/index.html      │  ◀── GET /api/booking/:id ──   │   server.js                  │
+│   docs/index.html        │  ◀── GET /api/booking/:id ──   │   server.js                  │
 │   • Senior-friendly UI   │       GET /api/status           │   • Express API              │
 │   • localStorage creds   │                                 │   • In-RAM volatile store    │
 │   • Countdown timer      │                                 │   • Playwright automation    │
@@ -39,7 +39,7 @@
 Golf Bot/
 ├── package.json          # Node.js dependencies & scripts
 ├── server.js             # Express API + Playwright automation engine
-├── public/
+├── docs/
 │   └── index.html        # Senior-accessible frontend (GitHub Pages)
 └── README.md             # This file
 ```
@@ -154,7 +154,7 @@ https://golf-bot.onrender.com
 
 #### Step 1: Update Backend URL
 
-Edit `public/index.html` and change the `BACKEND_URL` constant near the top of the `<script>` block:
+Edit `docs/index.html` and change the `BACKEND_URL` constant near the top of the `<script>` block:
 
 ```javascript
 // Replace this line:
@@ -168,17 +168,17 @@ const BACKEND_URL = 'https://golf-bot.onrender.com';
 
 1. Go to your GitHub repo → **Settings** → **Pages**
 2. Under **Source**, select **Deploy from a branch**
-3. Branch: `main`, Folder: `/public`
+3. Branch: `main`, Folder: `/docs`
 4. Click **Save**
 
 GitHub will give you a URL like:
 ```
-https://YOUR_USERNAME.github.io/golf-bot/public/
+https://YOUR_USERNAME.github.io/golf-bot/
 ```
 
 #### Step 3: (Alternative) Deploy Entire Site as GitHub Pages
 
-If you prefer the root to be the frontend, create a separate `gh-pages` branch or move `public/index.html` to the repo root. The simplest approach: just share the URL GitHub gives you.
+The frontend will be served directly from the root URL since GitHub Pages deploys the `/docs` folder.
 
 ---
 
