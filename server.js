@@ -54,6 +54,15 @@ const CONFIG = {
   minHumanDelay: 100,
   maxHumanDelay: 300,
 
+  // ── CAPTCHA / Anti-Bot Configuration ─────────────────────────────────
+  // If TeeOne uses Google reCAPTCHA, set a 2captcha API key here.
+  // Get one at https://2captcha.com (deposit ~$3, each solve costs ~$0.003).
+  twoCaptchaApiKey: process.env.CAPTCHA_API_KEY || '',
+
+  // The reCAPTCHA sitekey for TeeOne. If this is wrong, find it by
+  // inspecting the page for `data-sitekey` on the reCAPTCHA iframe/div.
+  recaptchaSiteKey: process.env.RECAPTCHA_SITEKEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI', // Google's test key
+
   // ── TeeOne.golf Selectors ──────────────────────────────────────────────
   // ✅ Login selectors VERIFIED from actual TeeOne HTML (2026-06-07)
   // ⚠️  Calendar/booking selectors are best-guess based on platform patterns.
@@ -296,6 +305,183 @@ function wipeAllData() {
   console.log(`📋 [CLEANUP] Execution log now has ${executionLog.length} entries.`);
 }
 
+// ─── Anti-Detection: In-Page Stealth Script ─────────────────────────────────
+// Injected before any page load to hide Playwright traces from JS detection.
+
+const STEALTH_SCRIPT = `
+  // Override navigator.webdriver (most common bot detection signal)
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+  // Override chrome.runtime (Playwright leaks this)
+  window.chrome = { runtime: {} };
+
+  // Fake plugins array (headless browsers often have zero plugins)
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5],
+  });
+
+  // Fake languages
+  Object.defineProperty(navigator, 'languages', {
+    get: () => ['es-ES', 'es', 'en-US', 'en'],
+  });
+
+  // Override permissions API
+  const originalQuery = window.navigator.permissions.query;
+  window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications'
+      ? Promise.resolve({ state: Notification.permission })
+      : originalQuery(parameters)
+  );
+`;
+
+// ─── CAPTCHA Detection & Handling ───────────────────────────────────────────
+
+/**
+ * Detect what kind of CAPTCHA is present on the current page.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<{type: 'none'|'simple-checkbox'|'recaptcha'|'turnstile'|'hcaptcha'|'unknown', selector?: string}>}
+ */
+async function detectCaptcha(page) {
+  const checks = [
+    // Google reCAPTCHA v2 checkbox
+    { type: 'recaptcha', sel: 'iframe[src*="recaptcha"], iframe[src*="google.com/recaptcha"], .g-recaptcha, div[data-sitekey]' },
+    // Cloudflare Turnstile
+    { type: 'turnstile', sel: 'iframe[src*="turnstile"], iframe[src*="challenges.cloudflare"], .cf-turnstile' },
+    // hCaptcha
+    { type: 'hcaptcha', sel: 'iframe[src*="hcaptcha"], .h-captcha' },
+    // Simple custom checkbox (TeeOne might use this)
+    { type: 'simple-checkbox', sel: 'input[type="checkbox"][name*="robot"], input[type="checkbox"][id*="robot"], input[type="checkbox"][name*="bot"], label:has-text("not a robot"), label:has-text("no soy robot"), label:has-text("No soy un robot")' },
+  ];
+
+  for (const check of checks) {
+    try {
+      const el = await page.$(check.sel.split(', ')[0]);
+      if (el) {
+        console.log(`   🔍 CAPTCHA detected: ${check.type} (${check.sel.split(', ')[0]})`);
+        return { type: check.type, selector: check.sel };
+      }
+    } catch (_) { /* selector didn't match */ }
+  }
+
+  return { type: 'none' };
+}
+
+/**
+ * Attempt to solve a detected CAPTCHA.
+ * @returns {Promise<{solved: boolean, method: string}>}
+ */
+async function solveCaptcha(page, captchaType) {
+  switch (captchaType) {
+    // ── Simple checkbox: just click it ─────────────────────────────────
+    case 'simple-checkbox': {
+      console.log(`   ✅ Attempting to click simple anti-bot checkbox…`);
+      try {
+        // Try multiple possible selectors
+        const checkboxSelectors = [
+          'input[type="checkbox"][name*="robot"]',
+          'input[type="checkbox"][id*="robot"]',
+          'input[type="checkbox"][name*="bot"]',
+          'label:has-text("not a robot") input',
+          'label:has-text("no soy robot") input',
+          'label:has-text("No soy un robot") input',
+        ];
+        for (const sel of checkboxSelectors) {
+          const cb = await page.$(sel);
+          if (cb) {
+            await cb.click();
+            await randomDelay(100, 200);
+            console.log(`   ✅ Anti-bot checkbox clicked via: ${sel}`);
+            return { solved: true, method: `checkbox-click:${sel}` };
+          }
+        }
+        return { solved: false, method: 'checkbox-not-found' };
+      } catch (err) {
+        console.log(`   ⚠️  Checkbox click failed: ${err.message}`);
+        return { solved: false, method: `checkbox-error:${err.message}` };
+      }
+    }
+
+    // ── Google reCAPTCHA: solve via 2captcha ──────────────────────────
+    case 'recaptcha': {
+      const apiKey = CONFIG.twoCaptchaApiKey;
+      if (!apiKey) {
+        console.log(`   ⚠️  reCAPTCHA detected but no 2captcha API key configured.`);
+        console.log(`   → Set CAPTCHA_API_KEY env var on Render to enable auto-solving.`);
+        return { solved: false, method: 'no-api-key' };
+      }
+
+      console.log(`   🤖 Solving reCAPTCHA via 2captcha (this takes 15-45 seconds)…`);
+      try {
+        const siteKey = CONFIG.recaptchaSiteKey;
+        const pageUrl = page.url();
+
+        // Step 1: Submit CAPTCHA to 2captcha
+        const submitResp = await fetch(
+          `https://2captcha.com/in.php?key=${apiKey}&method=userrecaptcha&googlekey=${siteKey}&pageurl=${encodeURIComponent(pageUrl)}&json=1`
+        );
+        const submitData = await submitResp.json();
+        if (submitData.status !== 1) {
+          console.log(`   ❌ 2captcha submission failed: ${submitData.request}`);
+          return { solved: false, method: `2captcha-submit-failed:${submitData.request}` };
+        }
+        const captchaId = submitData.request;
+        console.log(`   ↳ CAPTCHA submitted (ID: ${captchaId}). Polling for solution…`);
+
+        // Step 2: Poll for solution (up to 120 seconds)
+        for (let i = 0; i < 24; i++) {
+          await new Promise(r => setTimeout(r, 5000)); // Wait 5s between polls
+          const resultResp = await fetch(
+            `https://2captcha.com/res.php?key=${apiKey}&action=get&id=${captchaId}&json=1`
+          );
+          const resultData = await resultResp.json();
+          if (resultData.status === 1) {
+            const token = resultData.request;
+            console.log(`   ✅ 2captcha solved! Injecting token…`);
+
+            // Step 3: Inject the solution token into the page
+            await page.evaluate((gToken) => {
+              const textarea = document.querySelector('#g-recaptcha-response');
+              if (textarea) {
+                (textarea).style.display = 'block';
+                (textarea).value = gToken;
+              }
+              // Also try the callback approach
+              if (typeof window.___grecaptcha_cfg !== 'undefined') {
+                const cfg = window.___grecaptcha_cfg;
+                const clients = cfg.clients || {};
+                for (const clientId of Object.keys(clients)) {
+                  const client = clients[clientId];
+                  const callbackKey = Object.keys(client).find(k => k.startsWith('callback'));
+                  if (callbackKey && typeof client[callbackKey] === 'function') {
+                    client[callbackKey](gToken);
+                  }
+                }
+              }
+            }, token);
+
+            await randomDelay(500, 1000);
+            return { solved: true, method: '2captcha' };
+          }
+          if (resultData.request === 'ERROR_CAPTCHA_UNSOLVABLE') {
+            console.log(`   ❌ 2captcha reported CAPTCHA as unsolvable.`);
+            return { solved: false, method: '2captcha-unsolvable' };
+          }
+        }
+        console.log(`   ❌ 2captcha timed out (120s).`);
+        return { solved: false, method: '2captcha-timeout' };
+      } catch (err) {
+        console.log(`   ❌ 2captcha error: ${err.message}`);
+        return { solved: false, method: `2captcha-error:${err.message}` };
+      }
+    }
+
+    // ── Unsupported CAPTCHA types ──────────────────────────────────────
+    default:
+      console.log(`   ⚠️  Unsupported CAPTCHA type: ${captchaType}. Cannot auto-solve.`);
+      return { solved: false, method: `unsupported:${captchaType}` };
+  }
+}
+
 // ─── Playwright Automation Engine ───────────────────────────────────────────
 
 /**
@@ -314,6 +500,9 @@ async function executeSingleBooking(booking, targetDay) {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-infobars',
+      '--window-size=390,844',
     ],
   });
 
@@ -322,9 +511,15 @@ async function executeSingleBooking(booking, targetDay) {
     viewport: { width: 390, height: 844 },
     locale: 'es-ES',
     timezoneId: 'Europe/Madrid',
+    // Simulate touch screen (mobile device)
+    hasTouch: true,
+    isMobile: true,
   });
 
   const page = await context.newPage();
+
+  // ── Inject stealth script BEFORE any page loads ──────────────────────
+  await page.addInitScript(STEALTH_SCRIPT);
 
   try {
     const S = CONFIG.selectors;
@@ -333,6 +528,23 @@ async function executeSingleBooking(booking, targetDay) {
     console.log(`🔑 [${booking.id}] Navigating to login page…`);
     await page.goto(S.loginUrl, { waitUntil: 'networkidle', timeout: 30000 });
     await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+
+    // ── Step 1a: CAPTCHA check on login page ───────────────────────────
+    const loginCaptcha = await detectCaptcha(page);
+    if (loginCaptcha.type !== 'none') {
+      console.log(`   🛡️  CAPTCHA on login page: ${loginCaptcha.type}`);
+      const solved = await solveCaptcha(page, loginCaptcha.type);
+      if (!solved.solved && loginCaptcha.type === 'recaptcha') {
+        console.log(`   ❌ Cannot solve reCAPTCHA — bailing out.`);
+        return {
+          success: false,
+          message: `CAPTCHA detectado en login (${loginCaptcha.type}) pero no se pudo resolver automáticamente. Configure CAPTCHA_API_KEY en Render.`,
+          targetDay: targetDay.key,
+          date: formatSpanishDate(targetDay.date),
+        };
+      }
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+    }
 
     // Type username with human-like keystroke delays
     await page.waitForSelector(S.usernameField, { timeout: 10000 });
@@ -353,6 +565,23 @@ async function executeSingleBooking(booking, targetDay) {
     await page.waitForLoadState('networkidle', { timeout: 15000 });
     await randomDelay(200, 400);
 
+    // ── Step 1b: CAPTCHA check AFTER login (some sites trigger it post-login) ──
+    const postLoginCaptcha = await detectCaptcha(page);
+    if (postLoginCaptcha.type !== 'none') {
+      console.log(`   🛡️  CAPTCHA after login: ${postLoginCaptcha.type}`);
+      const solved = await solveCaptcha(page, postLoginCaptcha.type);
+      if (!solved.solved && postLoginCaptcha.type === 'recaptcha') {
+        console.log(`   ❌ Cannot solve post-login reCAPTCHA.`);
+        return {
+          success: false,
+          message: `CAPTCHA detectado después del login (${postLoginCaptcha.type}) pero no se pudo resolver.`,
+          targetDay: targetDay.key,
+          date: formatSpanishDate(targetDay.date),
+        };
+      }
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+    }
+
     console.log(`✅ [${booking.id}] Login completed. Session is hot.`);
 
     // ── Step 2: Navigate to Calendar ──────────────────────────────────
@@ -362,6 +591,17 @@ async function executeSingleBooking(booking, targetDay) {
     console.log(`🗓️  [${booking.id}] Navigating to calendar for ${targetDay.label} (${dateStr})…`);
     await page.goto(S.calendarUrl, { waitUntil: 'networkidle', timeout: 30000 });
     await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+
+    // ── CAPTCHA check on calendar page ─────────────────────────────────
+    const calendarCaptcha = await detectCaptcha(page);
+    if (calendarCaptcha.type !== 'none') {
+      console.log(`   🛡️  CAPTCHA on calendar: ${calendarCaptcha.type}`);
+      const solved = await solveCaptcha(page, calendarCaptcha.type);
+      if (!solved.solved) {
+        console.log(`   ⚠️  Could not solve calendar CAPTCHA. Trying to proceed anyway…`);
+      }
+      await randomDelay(CONFIG.minHumanDelay, CONFIG.maxHumanDelay);
+    }
 
     // ── Step 2b: Click the target date on the calendar ─────────────────
     // TeeOne shows a calendar grid; you must click the specific date first
