@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "postinstall": "npx playwright install --with-deps chromium"
+    "render-build": "npx playwright install --with-deps chromium"
   },
   "keywords": [
     "golf",
